@@ -59,11 +59,27 @@ export interface ExperimentalConfig {
   responseLabelMeta: Record<string, CategoryMeta>;
 }
 
-export interface GridConfig {
+/** One grid question. A survey is an ordered list of these. */
+export interface GridStep {
   id: string;
-  name: string;
   layout: LayoutConfig;
   tuning: TuningConfig;
   survey: SurveyConfig;
   experimental?: ExperimentalConfig;
+  /**
+   * Only used on steps after the first. When true, the step reuses the previous
+   * step's grid (shape, center cell, background, sizing, categories), runs in
+   * experimental mode, and is pre-filled with the respondent's answers from the
+   * previous step. Empty cells from the previous step can't be rated.
+   */
+  buildsOnPrevious?: boolean;
+}
+
+/**
+ * A saved survey. The first step's fields live directly on the config (so older
+ * single-question surveys load unchanged); any further steps are in followUpSteps.
+ */
+export interface GridConfig extends GridStep {
+  name: string;
+  followUpSteps?: GridStep[];
 }

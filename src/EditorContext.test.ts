@@ -221,3 +221,77 @@ describe("normalizeConfig", () => {
     });
   });
 });
+
+// ─── Multi-step surveys ───────────────────────────────────────────────────────
+
+describe("editorReducer steps", () => {
+  it("addStep appends a linked step and selects it", () => {
+    const state = editorReducer(makeState(), { type: "addStep" });
+    expect(state.config.followUpSteps).toHaveLength(1);
+    expect(state.config.followUpSteps![0].buildsOnPrevious).toBe(true);
+    expect(state.activeStep).toBe(1);
+  });
+
+  it("edits go to the active step only", () => {
+    let state = editorReducer(makeState(), { type: "addStep" });
+    state = editorReducer(state, { type: "updateLayout", patch: { questionText: "Step 2 Q" } });
+    state = editorReducer(state, {
+      type: "updateExperimental",
+      patch: { responseLabelsCsv: "Good, Bad" },
+    });
+    expect(state.config.layout.questionText).toBe("Q");
+    expect(state.config.experimental!.responseLabelsCsv).toBe("");
+    expect(state.config.followUpSteps![0].layout.questionText).toBe("Step 2 Q");
+    expect(
+      Object.keys(state.config.followUpSteps![0].experimental!.responseLabelMeta),
+    ).toEqual(["Good", "Bad"]);
+
+    state = editorReducer(state, { type: "selectStep", index: 0 });
+    state = editorReducer(state, { type: "updateLayout", patch: { rows: 4 } });
+    expect(state.config.layout.rows).toBe(4);
+  });
+
+  it("setConfig for the same survey keeps the active step; a different survey resets it", () => {
+    let state = editorReducer(makeState(), { type: "addStep" });
+    state = editorReducer(state, {
+      type: "setConfig",
+      config: { ...state.config, name: "Renamed" },
+    });
+    expect(state.activeStep).toBe(1);
+    expect(state.config.followUpSteps).toHaveLength(1);
+
+    state = editorReducer(state, {
+      type: "setConfig",
+      config: { ...makeBaseConfig(), id: "other" },
+    });
+    expect(state.activeStep).toBe(0);
+  });
+
+  it("removeStep drops the step and its preview answers", () => {
+    let state = editorReducer(makeState(), { type: "addStep" });
+    const stepId = state.config.followUpSteps![0].id;
+    state = editorReducer(state, {
+      type: "setPreviewOutput",
+      stepId,
+      output: { "r1-c1": "A" },
+    });
+    state = editorReducer(state, { type: "removeStep", index: 1 });
+    expect(state.config.followUpSteps).toBeUndefined();
+    expect(state.activeStep).toBe(0);
+    expect(state.previewOutputs?.[stepId]).toBeUndefined();
+  });
+
+  it("setPreviewOutput returns the same state when nothing changed", () => {
+    const state = editorReducer(makeState(), {
+      type: "setPreviewOutput",
+      stepId: "base-id",
+      output: { "r1-c1": "A" },
+    });
+    const again = editorReducer(state, {
+      type: "setPreviewOutput",
+      stepId: "base-id",
+      output: { "r1-c1": "A" },
+    });
+    expect(again).toBe(state);
+  });
+});

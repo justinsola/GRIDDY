@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditor } from "../EditorContext";
 import { SelectionMode, WeightEntry } from "../grid-types";
-import { buildQualtricsSnippet } from "../lib/qualtricsExport";
+import { buildQualtricsSnippet, getEmbeddedDataFields } from "../lib/qualtricsExport";
+import { clampStepIndex, resolveSteps } from "../lib/steps";
+
+const EMPTY_ANSWERS: Record<string, string> = {};
 
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -107,12 +110,23 @@ function computeWeightedSample(
 
 export const PreviewPanel: React.FC = () => {
   const {
-    state: { config },
+    state: { config, activeStep, previewOutputs },
     dispatch,
   } = useEditor();
 
-  const { layout, tuning, survey } = config;
-  const experimental = config.experimental!;
+  const resolvedSteps = useMemo(() => resolveSteps(config), [config]);
+  const stepIndex = clampStepIndex(config, activeStep ?? 0);
+  const step = resolvedSteps[stepIndex];
+  const totalSteps = resolvedSteps.length;
+  const inheritsPrevious = stepIndex > 0 && !!step.buildsOnPrevious;
+  const previousStepId = stepIndex > 0 ? resolvedSteps[stepIndex - 1].id : null;
+  // What was filled in on the previous step in this preview ("r1-c1" -> category).
+  const inheritedAssignments =
+    (inheritsPrevious && previousStepId && previewOutputs?.[previousStepId]) ||
+    EMPTY_ANSWERS;
+
+  const { layout, tuning, survey } = step;
+  const experimental = step.experimental!;
   const expEnabled = experimental.enabled;
 
   const categories = useMemo(
@@ -137,13 +151,22 @@ export const PreviewPanel: React.FC = () => {
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeResponseLabel, setActiveResponseLabel] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<Record<string, string>>({});
+  // Standard-mode answers live in the editor state (keyed by "r1-c1") so the
+  // next step can be previewed with them.
+  const assignments = (!expEnabled && previewOutputs?.[step.id]) || EMPTY_ANSWERS;
+  const setAssignments = useCallback(
+    (updater: (prev: Record<string, string>) => Record<string, string>) =>
+      dispatch({ type: "updatePreviewOutput", stepId: step.id, updater }),
+    [dispatch, step.id],
+  );
   const [draggedCategory, setDraggedCategory] = useState<string | null>(null);
   const [draggedResponseLabel, setDraggedResponseLabel] = useState<string | null>(null);
   const [dragOverCell, setDragOverCell] = useState<string | null>(null);
 
   // Experimental mode state
-  const [experimentalTab, setExperimentalTab] = useState<"setup" | "respondent">("setup");
+  const [experimentalTabState, setExperimentalTab] = useState<"setup" | "respondent">("setup");
+  // A step that builds on the previous one has nothing to set up: it's always the respondent view.
+  const experimentalTab = inheritsPrevious ? "respondent" : experimentalTabState;
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [weightedPreview, setWeightedPreview] = useState<Record<string, string>>({});
   const [shuffleSnapshot, setShuffleSnapshot] = useState<Record<string, string>>({});
@@ -168,15 +191,20 @@ export const PreviewPanel: React.FC = () => {
     }
   }, [responseLabels, activeResponseLabel]);
 
+  const lastResetStepId = useRef(step.id);
   useEffect(() => {
-    setAssignments({});
+    // Changing the input method or categories on a step clears its preview answers;
+    // just switching steps keeps them.
+    const sameStep = lastResetStepId.current === step.id;
+    lastResetStepId.current = step.id;
+    if (sameStep) dispatch({ type: "clearPreviewOutput", stepId: step.id });
     setDraggedCategory(null);
     setDragOverCell(null);
     setResponses({});
     setShuffleSnapshot({});
     setWeightedPreview({});
     setExperimentalTab("setup");
-  }, [config.id, survey.selectionMode, survey.categoriesCsv]);
+  }, [config.id, step.id, survey.selectionMode, survey.categoriesCsv, dispatch]);
 
   const totalCells = layout.rows * layout.cols;
   const cells: CellInfo[] = useMemo(
@@ -214,6 +242,7 @@ export const PreviewPanel: React.FC = () => {
   // Derive what to display in cells
   const displayAssignments = useMemo<Record<string, string>>(() => {
     if (!expEnabled) return assignments;
+    if (inheritsPrevious) return inheritedAssignments;
     if (experimentalTab === "setup") {
       if (experimental.prefillMode === "weighted") return weightedPreview;
       return experimental.fixedAssignments;
@@ -224,6 +253,8 @@ export const PreviewPanel: React.FC = () => {
     return experimental.fixedAssignments;
   }, [
     expEnabled,
+    inheritsPrevious,
+    inheritedAssignments,
     experimentalTab,
     experimental.prefillMode,
     experimental.fixedAssignments,
@@ -232,8 +263,14 @@ export const PreviewPanel: React.FC = () => {
     shuffleSnapshot,
   ]);
 
+  // An experimental step passes on the layout it showed, so a following step can build on it.
+  useEffect(() => {
+    if (!expEnabled) return;
+    dispatch({ type: "setPreviewOutput", stepId: step.id, output: displayAssignments });
+  }, [expEnabled, step.id, displayAssignments, dispatch]);
+
   const applyAssignment = useCallback(
-    (exportKey: string, ephemeralKey: string, category: string | null) => {
+    (exportKey: string, category: string | null) => {
       if (
         expEnabled &&
         experimentalTab === "setup" &&
@@ -251,15 +288,15 @@ export const PreviewPanel: React.FC = () => {
         setAssignments((prev) => {
           const next = { ...prev };
           if (!category) {
-            delete next[ephemeralKey];
+            delete next[exportKey];
           } else {
-            next[ephemeralKey] = category;
+            next[exportKey] = category;
           }
           return next;
         });
       }
     },
-    [expEnabled, experimentalTab, experimental.prefillMode, experimental.fixedAssignments, dispatch],
+    [expEnabled, experimentalTab, experimental.prefillMode, experimental.fixedAssignments, dispatch, setAssignments],
   );
 
   const applyResponse = useCallback((exportKey: string, label: string | null) => {
@@ -288,17 +325,16 @@ export const PreviewPanel: React.FC = () => {
       const current = experimental.fixedAssignments[cell.exportKey];
       applyAssignment(
         cell.exportKey,
-        cell.key,
         current === activeCategory ? null : activeCategory,
       );
     } else if (!expEnabled) {
       setAssignments((prev) => {
-        const current = prev[cell.key];
+        const current = prev[cell.exportKey];
         const next = { ...prev };
         if (current === activeCategory) {
-          delete next[cell.key];
+          delete next[cell.exportKey];
         } else {
-          next[cell.key] = activeCategory;
+          next[cell.exportKey] = activeCategory;
         }
         return next;
       });
@@ -317,7 +353,9 @@ export const PreviewPanel: React.FC = () => {
     setWeightedPreview(computeWeightedSample(experimental.weightedEntries, cells));
   };
 
+  // The export always covers the whole survey (every step), not just the one being edited.
   const qualtricsSnippet = useMemo(() => buildQualtricsSnippet(config), [config]);
+  const embeddedFields = useMemo(() => getEmbeddedDataFields(config), [config]);
 
   const handleCopy = async () => {
     try {
@@ -350,7 +388,14 @@ export const PreviewPanel: React.FC = () => {
         className="flex h-full min-h-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:overflow-hidden"
       >
         <header className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-800">Live preview</h2>
+          <h2 className="text-sm font-semibold text-slate-800">
+            Live preview
+            {totalSteps > 1 && (
+              <span className="ml-2 font-normal text-slate-500">
+                Step {stepIndex + 1} of {totalSteps}
+              </span>
+            )}
+          </h2>
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <span>
               {layout.rows} × {layout.cols}
@@ -366,8 +411,17 @@ export const PreviewPanel: React.FC = () => {
           </div>
         </header>
 
+        {/* Step that builds on the previous one */}
+        {inheritsPrevious && (
+          <p className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+            {Object.keys(inheritedAssignments).length === 0
+              ? `Nothing filled in on step ${stepIndex} yet. Fill in the grid there and come back to see it here.`
+              : `Showing what you filled in on step ${stepIndex}. Empty cells can't be rated.`}
+          </p>
+        )}
+
         {/* Experimental Setup / Respondent tab toggle */}
-        {expEnabled && (
+        {expEnabled && !inheritsPrevious && (
           <div className="inline-flex self-start items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
             <button
               type="button"
@@ -584,9 +638,7 @@ export const PreviewPanel: React.FC = () => {
             }}
           >
             {cells.map((cell) => {
-              // For experimental mode use exportKey for lookup, else use key
-              const lookupKey = expEnabled ? cell.exportKey : cell.key;
-              const assignedCat = displayAssignments[lookupKey];
+              const assignedCat = displayAssignments[cell.exportKey];
               const catMeta = assignedCat ? survey.categoryMeta[assignedCat] : null;
               const catColor = catMeta?.color ?? "#60a5fa";
               const catImage = catMeta?.imageUrl ?? "";
@@ -604,9 +656,11 @@ export const PreviewPanel: React.FC = () => {
                 const respColor = respMeta?.color ?? "#8b5cf6";
                 const respImage = respMeta?.imageUrl ?? "";
                 const hasResponse = Boolean(selectedResponse);
+                // Cells left empty on the step this one builds on can't be rated.
+                const canRespond = !(inheritsPrevious && !assignedCat);
                 const isRespDropTarget =
-                  survey.selectionMode === "dragdrop" && dragOverCell === cell.key;
-                const isInteractive = survey.selectionMode !== "dropdown";
+                  canRespond && survey.selectionMode === "dragdrop" && dragOverCell === cell.key;
+                const isInteractive = canRespond && survey.selectionMode !== "dropdown";
 
                 return (
                   <div
@@ -615,6 +669,7 @@ export const PreviewPanel: React.FC = () => {
                       hasResponse ? " border-2" : " border"
                     }${isInteractive ? " cursor-pointer" : ""}`}
                     onClick={() => {
+                      if (!canRespond) return;
                       if (survey.selectionMode === "paint" && activeResponseLabel) {
                         const current = responses[cell.exportKey];
                         applyResponse(
@@ -624,7 +679,7 @@ export const PreviewPanel: React.FC = () => {
                       }
                     }}
                     onDragOver={(e) => {
-                      if (survey.selectionMode !== "dragdrop") return;
+                      if (!canRespond || survey.selectionMode !== "dragdrop") return;
                       e.preventDefault();
                       setDragOverCell(cell.key);
                     }}
@@ -637,7 +692,7 @@ export const PreviewPanel: React.FC = () => {
                       }
                     }}
                     onDrop={(e) => {
-                      if (survey.selectionMode !== "dragdrop") return;
+                      if (!canRespond || survey.selectionMode !== "dragdrop") return;
                       e.preventDefault();
                       const dropped =
                         draggedResponseLabel ?? e.dataTransfer.getData("text/plain");
@@ -690,7 +745,7 @@ export const PreviewPanel: React.FC = () => {
                       style={
                         assignedCat && (survey.selectionMode === "dropdown" || hasResponse)
                           ? { borderBottom: `1px solid ${hexToRgba(catColor, 0.4)}` }
-                          : !assignedCat && survey.selectionMode === "dropdown"
+                          : canRespond && !assignedCat && survey.selectionMode === "dropdown"
                           ? { borderBottom: "1px solid #e2e8f0" }
                           : undefined
                       }
@@ -704,7 +759,7 @@ export const PreviewPanel: React.FC = () => {
                       )}
                     </div>
                     {/* Dropdown mode — response select */}
-                    {survey.selectionMode === "dropdown" && responseLabels.length > 0 && (
+                    {canRespond && survey.selectionMode === "dropdown" && responseLabels.length > 0 && (
                       <div className="flex-shrink-0 p-0.5">
                         <select
                           aria-label={`Response for row ${cell.row} column ${cell.col}`}
@@ -789,7 +844,6 @@ export const PreviewPanel: React.FC = () => {
                     }
                     applyAssignment(
                       cell.exportKey,
-                      cell.key,
                       droppedCategory === "__CLEAR__" ? null : droppedCategory,
                     );
                     setDragOverCell(null);
@@ -838,9 +892,9 @@ export const PreviewPanel: React.FC = () => {
                     <div className="flex h-full flex-col justify-center gap-1 p-1">
                       <select
                         aria-label={`Choose label for row ${cell.row} column ${cell.col}`}
-                        value={assignments[cell.key] ?? ""}
+                        value={assignments[cell.exportKey] ?? ""}
                         onChange={(e) =>
-                          applyAssignment(cell.exportKey, cell.key, e.target.value || null)
+                          applyAssignment(cell.exportKey, e.target.value || null)
                         }
                         className="w-full min-w-0 rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] text-slate-900 outline-none focus:border-sky-500"
                       >
@@ -930,73 +984,52 @@ export const PreviewPanel: React.FC = () => {
               </div>
               <aside className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
                 <h4 className="text-sm font-semibold">Qualtrics setup</h4>
-                {expEnabled ? (
-                  <ol className="flex flex-col gap-2">
+                <ol className="flex flex-col gap-2">
+                  <li>
+                    In Qualtrics, open <strong>Survey</strong>, then{" "}
+                    <strong>Survey Flow</strong>.
+                  </li>
+                  <li>
+                    Add an <strong>Embedded Data</strong> element before this question
+                    and create these fields, leaving them blank:
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {embeddedFields.map((field) => (
+                        <li key={field.name}>
+                          <code className="rounded bg-amber-100 px-1 font-mono font-bold">
+                            {field.name}
+                          </code>{" "}
+                          {totalSteps > 1 ? `step ${field.step}: ` : ""}
+                          {field.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                  <li>
+                    Go back to the question, open <strong>JavaScript</strong> under
+                    question behavior, and paste the code.
+                  </li>
+                  {totalSteps > 1 && (
                     <li>
-                      In Qualtrics, open <strong>Survey</strong>, then{" "}
-                      <strong>Survey Flow</strong>.
+                      All {totalSteps} steps run inside this one question. Respondents
+                      use the Next button under the grid to move from step to step.
                     </li>
-                    <li>
-                      Add an <strong>Embedded Data</strong> element before this question.
-                    </li>
-                    <li>
-                      Create two fields:{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono font-bold">
-                        GridPrefills
-                      </code>{" "}
-                      (what was shown) and{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono font-bold">
-                        GridResponses
-                      </code>{" "}
-                      (what the respondent selected). Leave both blank.
-                    </li>
-                    <li>
-                      Go back to the question, open <strong>JavaScript</strong> under
-                      question behavior, and paste the code.
-                    </li>
-                    <li>
-                      Export results from <strong>Data &amp; Analysis</strong>.
-                      Pre-fills are saved as{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono">{`{"r1-c1":"Dwarves"}`}</code>{" "}
-                      and responses as{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono">{`{"r1-c1":"Good"}`}</code>.
-                    </li>
-                  </ol>
-                ) : (
-                  <ol className="flex flex-col gap-2">
-                    <li>
-                      In Qualtrics, open <strong>Survey</strong>, then{" "}
-                      <strong>Survey Flow</strong>.
-                    </li>
-                    <li>
-                      Add an <strong>Embedded Data</strong> element before this question.
-                    </li>
-                    <li>
-                      Create a field named{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono font-bold">
-                        GridAssignments
-                      </code>{" "}
-                      and leave it blank.
-                    </li>
-                    <li>
-                      Go back to the question, open <strong>JavaScript</strong> under
-                      question behavior, and paste the code.
-                    </li>
-                    <li>
-                      Export results from <strong>Data &amp; Analysis</strong>. Responses
-                      are saved as JSON like{" "}
-                      <code className="rounded bg-amber-100 px-1 font-mono">{`{"r1-c1":"Dwarves"}`}</code>.
-                    </li>
-                  </ol>
+                  )}
+                  <li>
+                    Export results from <strong>Data &amp; Analysis</strong>. Each field
+                    is saved as JSON like{" "}
+                    <code className="rounded bg-amber-100 px-1 font-mono">{`{"r1-c1":"Dwarves"}`}</code>.
+                  </li>
+                </ol>
+                {totalSteps === 1 && (
+                  <p>
+                    If you have multiple grid questions, rename the embedded field(s) in
+                    the code and in Survey Flow to something unique like{" "}
+                    <code className="rounded bg-amber-100 px-1 font-mono">
+                      {expEnabled ? "GridPrefills_Q2" : "GridAssignments_Q2"}
+                    </code>
+                    .
+                  </p>
                 )}
-                <p>
-                  If you have multiple grid questions, rename the embedded field(s) to
-                  something unique like{" "}
-                  <code className="rounded bg-amber-100 px-1 font-mono">
-                    {expEnabled ? "GridPrefills_Q2" : "GridAssignments_Q2"}
-                  </code>
-                  .
-                </p>
               </aside>
             </div>
           </div>

@@ -4,6 +4,7 @@ import FlexContainer from "./components/FlexContainer";
 import LayoutTab from "./components/LayoutTab";
 import PreviewPanel from "./components/PreviewPanel";
 import SaveButton from "./components/SaveButton";
+import StepBar from "./components/StepBar";
 import SurveyTab from "./components/SurveyTab";
 import { useAuth } from "./lib/authContext";
 import { useEditor } from "./EditorContext";
@@ -88,6 +89,7 @@ function App() {
             aria-label="Layout configuration"
             className="min-h-0 rounded-xl bg-white p-4 shadow-sm md:flex md:flex-col md:overflow-hidden"
           >
+            <StepBar />
             <div className="mb-4 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-slate-800">
                 {activeTab === "layout" ? "Layout" : "Survey"}

@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useEditor } from "../EditorContext";
+import { clampStepIndex, resolveStep } from "../lib/steps";
 
 export const LayoutTab: React.FC = () => {
   const {
-    state: { config },
+    state: { config, activeStep },
     dispatch,
   } = useEditor();
 
-  const layout = config.layout;
+  const stepIndex = clampStepIndex(config, activeStep ?? 0);
+  const step = resolveStep(config, stepIndex);
+  const inherits = stepIndex > 0 && !!step.buildsOnPrevious;
+  const layout = step.layout;
 
   const [rowsInput, setRowsInput] = useState(String(layout.rows));
   const [colsInput, setColsInput] = useState(String(layout.cols));
@@ -28,7 +32,7 @@ export const LayoutTab: React.FC = () => {
     setColsWarning(false);
     setCenterRowWarning(false);
     setCenterColWarning(false);
-  }, [config.id]); // config.id changes on newSurvey and loadSurvey
+  }, [config.id, step.id]); // config.id changes on newSurvey/loadSurvey, step.id when switching steps
 
   const updateLayout = (patch: Partial<typeof layout>) => {
     dispatch({ type: "updateLayout", patch });
@@ -124,134 +128,146 @@ export const LayoutTab: React.FC = () => {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Rows</span>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-              value={rowsInput}
-              onChange={handleRowsChange}
-              onBlur={handleRowsBlur}
-            />
-          </label>
-          {rowsWarning && (
-            <span className="text-xs text-red-500">Maximum is 10</span>
-          )}
-        </div>
+      {inherits ? (
+        <p className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+          This step builds on step {stepIndex}, so it uses the same grid
+          ({layout.rows} × {layout.cols}), center cell, background and sizing.
+          Change those on step {stepIndex}, or uncheck "Build on step{" "}
+          {stepIndex}" above to edit them here.
+        </p>
+      ) : (
+        <>
 
-        <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Columns</span>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-              value={colsInput}
-              onChange={handleColsChange}
-              onBlur={handleColsBlur}
-            />
-          </label>
-          {colsWarning && (
-            <span className="text-xs text-red-500">Maximum is 10</span>
-          )}
-        </div>
-      </div>
-
-      <fieldset className="rounded-md border border-slate-200 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-700">
-          Center cell
-        </legend>
-
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-slate-300"
-            checked={layout.includeCenterCell}
-            onChange={(e) =>
-              updateLayout({ includeCenterCell: e.target.checked })
-            }
-          />
-          Include labeled cell
-        </label>
-
-        <div className="mt-3 flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Cell label</span>
-            <input
-              type="text"
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-              value={layout.centerCellLabel}
-              onChange={(e) =>
-                updateLayout({ centerCellLabel: e.target.value })
-              }
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">
-                  Center row{" "}
-                  <span className="font-normal text-slate-500">(optional)</span>
-                </span>
+              <label className="flex flex-col gap-1">
+                <span className="font-medium">Rows</span>
                 <input
                   type="number"
                   min={1}
-                  max={layout.rows || 1}
+                  max={10}
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                  value={centerRowInput}
-                  onChange={handleCenterRowChange}
+                  value={rowsInput}
+                  onChange={handleRowsChange}
+                  onBlur={handleRowsBlur}
                 />
               </label>
-              {centerRowWarning && (
-                <span className="text-xs text-red-500">
-                  Max is {layout.rows}
-                </span>
+              {rowsWarning && (
+                <span className="text-xs text-red-500">Maximum is 10</span>
               )}
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">
-                  Center column{" "}
-                  <span className="font-normal text-slate-500">(optional)</span>
-                </span>
+              <label className="flex flex-col gap-1">
+                <span className="font-medium">Columns</span>
                 <input
                   type="number"
                   min={1}
-                  max={layout.cols || 1}
+                  max={10}
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                  value={centerColInput}
-                  onChange={handleCenterColChange}
+                  value={colsInput}
+                  onChange={handleColsChange}
+                  onBlur={handleColsBlur}
                 />
               </label>
-              {centerColWarning && (
-                <span className="text-xs text-red-500">
-                  Max is {layout.cols}
-                </span>
+              {colsWarning && (
+                <span className="text-xs text-red-500">Maximum is 10</span>
               )}
             </div>
           </div>
-        </div>
-      </fieldset>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Background image URL</span>
-        <input
-          type="url"
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-          placeholder="https://example.com/map.png"
-          value={layout.backgroundImageUrl}
-          onChange={(e) =>
-            updateLayout({ backgroundImageUrl: e.target.value })
-          }
-        />
-      </label>
+          <fieldset className="rounded-md border border-slate-200 p-4">
+            <legend className="px-1 text-sm font-semibold text-slate-700">
+              Center cell
+            </legend>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
+                checked={layout.includeCenterCell}
+                onChange={(e) =>
+                  updateLayout({ includeCenterCell: e.target.checked })
+                }
+              />
+              Include labeled cell
+            </label>
+
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Cell label</span>
+                <input
+                  type="text"
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  value={layout.centerCellLabel}
+                  onChange={(e) =>
+                    updateLayout({ centerCellLabel: e.target.value })
+                  }
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="font-medium">
+                      Center row{" "}
+                      <span className="font-normal text-slate-500">(optional)</span>
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={layout.rows || 1}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                      value={centerRowInput}
+                      onChange={handleCenterRowChange}
+                    />
+                  </label>
+                  {centerRowWarning && (
+                    <span className="text-xs text-red-500">
+                      Max is {layout.rows}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="font-medium">
+                      Center column{" "}
+                      <span className="font-normal text-slate-500">(optional)</span>
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={layout.cols || 1}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                      value={centerColInput}
+                      onChange={handleCenterColChange}
+                    />
+                  </label>
+                  {centerColWarning && (
+                    <span className="text-xs text-red-500">
+                      Max is {layout.cols}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <label className="flex flex-col gap-1">
+            <span className="font-medium">Background image URL</span>
+            <input
+              type="url"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+              placeholder="https://example.com/map.png"
+              value={layout.backgroundImageUrl}
+              onChange={(e) =>
+                updateLayout({ backgroundImageUrl: e.target.value })
+              }
+            />
+          </label>
+        </>
+      )}
     </form>
   );
 };
