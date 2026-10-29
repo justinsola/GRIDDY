@@ -113,12 +113,19 @@ npm run build
 ```
 
 and serves the generated `dist/` folder. No environment variables are required.
+Every push to `main` deploys to production automatically; other branches and PRs
+get preview URLs. See [docs/deploying.md](docs/deploying.md) for the full workflow.
 
 ## Project Structure
 
 - `src/App.tsx`: Main grid editor page.
-- `src/components/`: Reusable editor, preview, save, and layout components.
-- `src/pages/`: Auth, profile, history, and error pages.
+- `src/components/`: Editor (`ConfigPanel`), preview, save, and tour components.
+- `src/pages/`: My Surveys (history), combine-surveys, and error pages.
 - `src/lib/`: Saved survey and Qualtrics export helpers.
 - `src/grid-types.ts`: Shared TypeScript types for grid configuration.
-- `docs/client-handoff.md`: Client hand-off and deployment plan.
+
+## Documentation
+
+- [docs/codebase.md](docs/codebase.md) — how the app is structured, the data model, and where to add features.
+- [docs/building.md](docs/building.md) — local setup, scripts, the build, and troubleshooting.
+- [docs/deploying.md](docs/deploying.md) — how Vercel deploys, the branch → preview → merge workflow, and rollbacks.
