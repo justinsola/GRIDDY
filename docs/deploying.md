@@ -105,13 +105,11 @@ git merge origin/main
 
 Fix any conflicts, then run `npm run build` and push.
 
-## Known deploy gap: refreshing `/history` returns 404
+## `vercel.json`: why refreshing `/history` works
 
-GRIDDY uses client-side routing. Clicking **My Surveys** inside the app works,
-but if you *load or refresh* `https://griddy-survey.vercel.app/history` (or
-`/history/combine`) directly, Vercel returns **404**, because there is no
-`history` file in `dist/`. To fix it, add a `vercel.json` at the repo root that
-sends every path to the app:
+GRIDDY uses client-side routing, so there is no real `history` file in `dist/`.
+[`vercel.json`](../vercel.json) tells Vercel to serve `index.html` for any path
+that isn't a real file, and React Router then shows the right page:
 
 ```json
 {
@@ -119,8 +117,9 @@ sends every path to the app:
 }
 ```
 
-Commit it through the normal branch → PR → merge flow. After that, refreshing
-any page works.
+Real files such as `/assets/*.js` are still served as-is. Without this file,
+loading or refreshing `/history` or `/history/combine` directly returns a 404.
+Keep it in place if you add new routes.
 
 ## If you ever need to set up Vercel from scratch
 

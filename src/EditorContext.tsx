@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
 import React, { createContext, useContext, useMemo, useReducer } from "react";
 import {
   CategoryMeta,

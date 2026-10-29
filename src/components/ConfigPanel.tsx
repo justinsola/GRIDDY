@@ -170,7 +170,7 @@ function chipItemsToMeta(items: ChipItem[]): Record<string, CategoryMeta> {
 }
 
 // ---------------------------------------------------------------------------
-// Section 01 — Question & Grid (mirrors LayoutTab logic inline)
+// Section 01 — Question & Grid
 // ---------------------------------------------------------------------------
 
 const QuestionGridForm: React.FC = () => {
@@ -187,6 +187,8 @@ const QuestionGridForm: React.FC = () => {
     setColsInput(String(layout.cols));
     setRowsWarn(false);
     setColsWarn(false);
+    // Only resync the inputs when a different survey is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.id]);
 
   const update = (patch: Partial<typeof layout>) =>

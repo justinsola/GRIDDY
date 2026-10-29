@@ -113,9 +113,9 @@ describe("syncCategoryMeta", () => {
     expect(result).toEqual({});
   });
 
-  it("trims whitespace around category names", () => {
-    const result = syncCategoryMeta("  Alpha ,  Beta  ", {});
-    expect(Object.keys(result)).toEqual(["Alpha", "Beta"]);
+  it("strips only the single leading space added by the \", \" join", () => {
+    const result = syncCategoryMeta("Alpha, Beta, New ", {});
+    expect(Object.keys(result)).toEqual(["Alpha", "Beta", "New "]);
   });
 
   it("preserves a blank token instead of dropping it (mid-edit: retyping a name)", () => {

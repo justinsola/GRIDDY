@@ -77,6 +77,7 @@ export function stableStringify(value: unknown): string {
 
 export function surveyFingerprint(name: string, config: GridConfig): string {
   const normalizedName = name.trim().toLowerCase();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id: _ignoredId, ...configWithoutId } = config;
 
   return stableStringify({
