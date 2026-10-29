@@ -54,6 +54,12 @@ npm run lint
 Vercel, but all three pass cleanly on `main`, so keep it that way: a new failure
 means something you changed.
 
+GitHub Actions runs the same three checks automatically on every pull request
+and every push to `main` (see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
+It installs with `npm ci`, which fails if `package-lock.json` doesn't match
+`package.json`. If you change dependencies, run `npm install` and commit the
+updated lockfile too.
+
 ## How the build works
 
 1. `tsc` type-checks `src/` using [`tsconfig.json`](../tsconfig.json). Strict

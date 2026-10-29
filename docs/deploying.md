@@ -72,8 +72,13 @@ main ──●──────────────────────
    gh pr create --base main --fill
    ```
 
-   Wait for the green **Vercel** check on the PR. A red check means
-   `npm run build` failed. Click **Details** to read the build log.
+   Wait for two green checks on the PR:
+   - **Vercel**: the preview deployed. Red means `npm run build` failed.
+   - **CI / Build, test, lint**: GitHub Actions ran the build, the tests and
+     lint. Red means one of them failed.
+
+   Click **Details** next to a red check to read the log. Fix the problem and
+   push again; the checks re-run automatically.
 
 6. **Merge the PR.** Vercel deploys `main` to production in about a minute.
    Open https://griddy-survey.vercel.app/ and hard-refresh (Cmd+Shift+R) to
