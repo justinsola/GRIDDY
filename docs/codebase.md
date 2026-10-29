@@ -117,7 +117,6 @@ script in `qualtricsExport.ts` → add a test.
 | [`SaveButton.tsx`](../src/components/SaveButton.tsx) | Saves to localStorage (needs a survey title). |
 | [`TourGuide.tsx`](../src/components/TourGuide.tsx) | Step-by-step onboarding tour. |
 | [`FlexContainer.tsx`](../src/components/FlexContainer.tsx) | Small layout helper. |
-| `LayoutTab.tsx`, `SurveyTab.tsx` | **Dead code**: older editor UI replaced by `ConfigPanel`. Safe to delete. |
 
 ## Library code (`src/lib/`)
 
@@ -159,7 +158,6 @@ Tests sit next to the code as `*.test.ts(x)`:
 
 - Sign-in and Supabase cloud sync were **removed on 2026-08-14**. The
   [`CLAUDE.md`](../CLAUDE.md) file explains how to bring them back. `.mcp.json`
-  still points at the old Supabase project, and `localforage` / `react-webcam`
-  are unused leftover dependencies.
+  still points at the old Supabase project.
 - `package.json` still says `"name": "photobooth"` (from the starter template).
   It's harmless.

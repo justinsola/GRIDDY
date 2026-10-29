@@ -46,20 +46,13 @@ npm run build
 npm test
 ```
 
+```bash
+npm run lint
+```
+
 `build` is the one that matters for deploying. Tests and lint don't block
-Vercel, but run them anyway to catch regressions.
-
-### Known issues on `main` (as of 2026-10-29)
-
-These come from earlier work. They don't affect deploys:
-
-- **1 failing test**: `EditorContext.test.ts > syncCategoryMeta > trims
-  whitespace around category names`. The code now keeps blank/space-padded
-  names on purpose (see `splitCsvPreservingBlanks`), so the test is out of date.
-- **3 lint errors**: unused `_controls` in `TourGuide.tsx`, unused `_ignoredId`
-  in `surveysApi.ts`, and an unneeded `eslint-disable` in `HistoryPage.tsx`.
-
-Fixing these is a good small first PR.
+Vercel, but all three pass cleanly on `main`, so keep it that way: a new failure
+means something you changed.
 
 ## How the build works
 

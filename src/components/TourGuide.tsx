@@ -1,5 +1,5 @@
 import { Joyride, STATUS } from "react-joyride";
-import type { Controls, EventData, Step } from "react-joyride";
+import type { EventData, Step } from "react-joyride";
 
 const STEPS: Step[] = [
   {
@@ -53,7 +53,7 @@ interface TourGuideProps {
 }
 
 export default function TourGuide({ run, onFinish }: TourGuideProps) {
-  const handleEvent = (data: EventData, _controls: Controls) => {
+  const handleEvent = (data: EventData) => {
     if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
       onFinish();
     }

@@ -58,7 +58,6 @@ export default function HistoryPage() {
 
   useEffect(() => {
     refreshSurveys();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleOpen = async (id: string) => {
