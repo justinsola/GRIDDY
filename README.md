@@ -1,5 +1,9 @@
 # GRIDDY
 
+<p align="center">
+  <img src="docs/assets/griddy-mascot.png" alt="The GRIDDY mascot: an orange, shaggy character with arms spread wide, wearing a black GRIDDY t-shirt with a 3 by 3 grid on it" width="360">
+</p>
+
 GRIDDY is a web-based grid question editor for building custom survey grid questions and exporting them into Qualtrics. It lets researchers configure a grid layout, define categories, preview the respondent experience, save reusable survey designs, and generate JavaScript that can be pasted into a Qualtrics question.
 
 Live app: https://griddy-survey.vercel.app/
