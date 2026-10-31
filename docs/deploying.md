@@ -5,7 +5,7 @@
 ## How it's wired
 
 The Vercel project (`griddy`, under the **suhasp3s-projects** Vercel team) is
-connected to the GitHub repo `suhasp3/GRIDDY` through Vercel's Git integration.
+connected to the GitHub repo `justinsola/GRIDDY-tool` through Vercel's Git integration.
 You don't run any deploy command. **Pushing to GitHub is the deploy:**
 
 | You push to… | Vercel does… |
@@ -130,7 +130,7 @@ Keep it in place if you add new routes.
 
 For example, to move the project to a different Vercel account:
 
-1. On vercel.com: **Add New → Project → Import** `suhasp3/GRIDDY`.
+1. On vercel.com: **Add New → Project → Import** `justinsola/GRIDDY-tool`.
 2. Framework preset: **Vite**. Build command `npm run build`, output directory
    `dist`, install command `npm install`. These are the defaults.
 3. No environment variables. Click **Deploy**.

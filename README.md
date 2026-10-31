@@ -10,7 +10,7 @@ Live app: https://griddy-survey.vercel.app/
 
 ## Team
 
-Team B: Ishita Siddamreddy, Suhas Puttoju, Katun Li, and Michael Jenkins.
+Developed by Michael Alfred Jenkins, Katun Jie Li, Suhas Puttoju, and Ishita Sai Siddamreddy, with Samuel Filmeyer, under Justin Lucas Sola.
 
 ## What GRIDDY Does
 
@@ -33,8 +33,8 @@ Team B: Ishita Siddamreddy, Suhas Puttoju, Katun Li, and Michael Jenkins.
 Clone the repository:
 
 ```bash
-git clone https://github.com/suhasp3/GRIDDY.git
-cd GRIDDY
+git clone https://github.com/justinsola/GRIDDY-tool.git
+cd GRIDDY-tool
 ```
 
 Install dependencies:

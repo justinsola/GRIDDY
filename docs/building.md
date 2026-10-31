@@ -4,7 +4,7 @@
 
 - **Node.js 20+**. 22 is what's used day to day: check with `node -v`.
 - **npm**, which comes with Node.
-- **git**, plus access to `github.com/suhasp3/GRIDDY`.
+- **git**, plus access to `github.com/justinsola/GRIDDY-tool`.
 
 You don't need any environment variables, database, or API keys. The app is
 fully client-side. (An old `.env` with Supabase keys may still be on your
@@ -13,11 +13,11 @@ machine. Nothing reads it any more.)
 ## First-time setup
 
 ```bash
-git clone https://github.com/suhasp3/GRIDDY.git
+git clone https://github.com/justinsola/GRIDDY-tool.git
 ```
 
 ```bash
-cd GRIDDY
+cd GRIDDY-tool
 ```
 
 ```bash
