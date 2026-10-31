@@ -6,7 +6,7 @@
 
 GRIDDY is a web-based grid question editor for building custom survey grid questions and exporting them into Qualtrics. It lets researchers configure a grid layout, define categories, preview the respondent experience, save reusable survey designs, and generate JavaScript that can be pasted into a Qualtrics question.
 
-Live app: https://griddy-survey.vercel.app/
+Live app: https://www.jlsola.com/GRIDDY/
 
 ## Team
 
@@ -25,7 +25,7 @@ Developed by Michael Alfred Jenkins, Katun Jie Li, Suhas Puttoju, and Ishita Sai
 - React + TypeScript
 - Vite
 - Tailwind CSS
-- Vercel for deployment
+- GitHub Pages for deployment
 - Qualtrics JavaScript export for survey delivery
 
 ## Local Setup
@@ -110,15 +110,17 @@ editor.
 
 ## Deployment
 
-The production app is deployed on Vercel. Vercel builds the app with:
+The production app is hosted on GitHub Pages at https://www.jlsola.com/GRIDDY/.
+A GitHub Actions workflow builds the app with:
 
 ```bash
 npm run build
 ```
 
-and serves the generated `dist/` folder. No environment variables are required.
-Every push to `main` deploys to production automatically; other branches and PRs
-get preview URLs. See [docs/deploying.md](docs/deploying.md) for the full workflow.
+and publishes the generated `dist/` folder. No environment variables are required.
+Every push to `main` deploys to the live site automatically; other branches and
+PRs only run the CI checks. See [docs/deploying.md](docs/deploying.md) for the
+full workflow.
 
 ## Project Structure
 
@@ -132,7 +134,7 @@ get preview URLs. See [docs/deploying.md](docs/deploying.md) for the full workfl
 
 - [docs/codebase.md](docs/codebase.md) — how the app is structured, the data model, and where to add features.
 - [docs/building.md](docs/building.md) — local setup, scripts, the build, and troubleshooting.
-- [docs/deploying.md](docs/deploying.md) — how Vercel deploys, the branch → preview → merge workflow, and rollbacks.
+- [docs/deploying.md](docs/deploying.md) — how GitHub Pages deploys, the branch → PR → merge workflow, and rollbacks.
 
 ## License
 

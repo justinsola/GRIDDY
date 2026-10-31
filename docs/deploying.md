@@ -1,32 +1,46 @@
-# Keeping the Vercel site up to date
+# Deploying GRIDDY to GitHub Pages
 
-**Live site:** https://griddy-survey.vercel.app/
+**Live site:** https://www.jlsola.com/GRIDDY/
 
 ## How it's wired
 
-The Vercel project (`griddy`, under the **suhasp3s-projects** Vercel team) is
-connected to the GitHub repo `justinsola/GRIDDY` through Vercel's Git integration.
-You don't run any deploy command. **Pushing to GitHub is the deploy:**
+The site is published by GitHub Pages from a GitHub Actions workflow,
+[`.github/workflows/pages.yml`](../.github/workflows/pages.yml). You don't run
+any deploy command. **Merging to `main` is the deploy:**
 
-| You push to… | Vercel does… |
+| You push to… | What happens |
 | --- | --- |
-| `main` | Builds and deploys to **production** (`griddy-survey.vercel.app`). |
-| Any other branch, or a PR | Builds a **preview deployment** with its own URL. Production isn't touched. |
+| `main` | The workflow builds the app and publishes `dist/` to the live site. |
+| Any other branch, or a PR | Only the CI checks run. The live site isn't touched. |
 
-Vercel auto-detects Vite. It runs `npm install` and `npm run build`, then serves
-`dist/`. No environment variables are needed.
+The workflow runs `npm ci` and `npm run build`, copies `index.html` to
+`404.html` (see below), and hands `dist/` to GitHub's Pages deployment. No
+environment variables are needed. Progress and logs are under the repo's
+**Actions** tab; the finished deployment is listed under **Deployments** on the
+repo's front page.
 
-The Vercel bot adds a status check and a preview link to each PR. You can also
-see deployments on the repo's GitHub page under **Deployments**, or in the
-Vercel dashboard. Only members of the Vercel team can open the dashboard, so ask
-Suhas to invite you if you need it.
+In the repo's **Settings → Pages**, the source must be **GitHub Actions**.
+That is the only setting the deploy depends on.
 
-## The workflow for every new feature
+### Where the URL comes from
+
+A project site on GitHub Pages is served at the owner's Pages domain plus the
+repository name. The owner's user site uses the custom domain `www.jlsola.com`,
+so this repository (`GRIDDY`) is served at `https://www.jlsola.com/GRIDDY/`.
+Renaming the repository would move the site to the new name; the workflow
+passes the repository name to the build as `BASE_PATH`, so no code changes.
+
+To move the app to its own subdomain instead (for example
+`griddy.jlsola.com`), add that domain under **Settings → Pages → Custom
+domain**, create the matching DNS record, and change `BASE_PATH` in the
+workflow to `/`.
+
+## The workflow for every change
 
 ```
-main ──●─────────────────────────●── (production auto-deploys)
+main ──●─────────────────────────●── (live site auto-deploys)
         \                       /
-         ●──●──●  feature/xyz  ●  ← preview URL for every push
+         ●──●──●  feature/xyz  ●
               push        PR → merge
 ```
 
@@ -40,14 +54,15 @@ main ──●──────────────────────
    git pull
    ```
 
-2. **Create a branch for the feature:**
+2. **Create a branch for the change:**
 
    ```bash
    git switch -c feature/short-description
    ```
 
 3. **Build it locally** with `npm run dev`. Before each push, check that
-   `npm run build` passes (see [building.md](building.md)).
+   `npm run build`, `npm test` and `npm run lint` pass (see
+   [building.md](building.md)).
 
 4. **Commit and push the branch:**
 
@@ -63,37 +78,39 @@ main ──●──────────────────────
    git push -u origin feature/short-description
    ```
 
-   Vercel builds a **preview URL** for the branch. Open it to test the feature on
-   real Vercel hosting, and share it with teammates or the client for feedback.
+5. **Open a pull request** into `main` and wait for the green check,
+   **CI / Build, test, lint**. Red means the build, the tests or lint failed;
+   click **Details** to read the log, fix the problem and push again.
 
-5. **Open a pull request** into `main`:
+6. **Merge the PR.** The Pages workflow deploys `main` in a minute or two.
+   Open https://www.jlsola.com/GRIDDY/ and hard-refresh (Ctrl+Shift+R, or
+   Cmd+Shift+R on a Mac) to check it.
 
-   ```bash
-   gh pr create --base main --fill
-   ```
+Small fixes can go straight to `main`, but a branch and PR get the CI check
+before anything reaches the live site.
 
-   Wait for two green checks on the PR:
-   - **Vercel**: the preview deployed. Red means `npm run build` failed.
-   - **CI / Build, test, lint**: GitHub Actions ran the build, the tests and
-     lint. Red means one of them failed.
+## Trying the production build locally
 
-   Click **Details** next to a red check to read the log. Fix the problem and
-   push again; the checks re-run automatically.
+The live site runs under the `/GRIDDY/` path, so build with the same base path
+to see exactly what will be deployed:
 
-6. **Merge the PR.** Vercel deploys `main` to production in about a minute.
-   Open https://griddy-survey.vercel.app/ and hard-refresh (Cmd+Shift+R) to
-   check it.
+```bash
+BASE_PATH=/GRIDDY/ npm run build
+```
 
-Small fixes can go straight to `main` (`git push` on `main`), but using a branch
-and PR gives you a preview to check first. Previews are free, so use them.
+```bash
+npm run preview
+```
 
-## If a deploy breaks production
+`vite preview` serves `dist/` at `http://localhost:4173/GRIDDY/`.
 
-- **Fastest:** in the Vercel dashboard, open **Deployments**, find the last good
-  production deployment, then **⋯ → Promote to Production** (Instant Rollback).
-  The site is back right away. Fix the bug at your own pace.
-- **Through git:** `git revert <bad-commit>` on `main` and push. That deploys a
-  new production build without the change.
+## If a deploy breaks the live site
+
+- **Through git:** `git revert <bad-commit>` on `main` and push. The workflow
+  deploys a new build without the change.
+- **Redeploy the last good build:** under **Actions → Deploy to GitHub
+  Pages**, open the last successful run and choose **Re-run all jobs**. That
+  rebuilds and republishes that commit.
 
 ## Keeping long-lived branches deployable
 
@@ -110,33 +127,21 @@ git merge origin/main
 
 Fix any conflicts, then run `npm run build` and push.
 
-## `vercel.json`: why refreshing `/history` works
+## `404.html`: why refreshing `/history` works
 
 GRIDDY uses client-side routing, so there is no real `history` file in `dist/`.
-[`vercel.json`](../vercel.json) tells Vercel to serve `index.html` for any path
-that isn't a real file, and React Router then shows the right page:
+GitHub Pages serves `404.html` for any path that isn't a real file, and the
+workflow makes `404.html` a copy of `index.html`, so the app loads and React
+Router shows the right page. Real files such as `/GRIDDY/assets/*.js` are
+still served as-is.
 
-```json
-{
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}
-```
+Two pieces of code keep the routes and assets on the `/GRIDDY/` path:
 
-Real files such as `/assets/*.js` are still served as-is. Without this file,
-loading or refreshing `/history` or `/history/combine` directly returns a 404.
-Keep it in place if you add new routes.
+- [`vite.config.ts`](../vite.config.ts) sets Vite's `base` from `BASE_PATH`,
+  which rewrites asset URLs in the built `index.html`.
+- [`src/main.tsx`](../src/main.tsx) gives React Router the same path as its
+  `basename`, so `/history` becomes `/GRIDDY/history`.
 
-## If you ever need to set up Vercel from scratch
-
-For example, to move the project to a different Vercel account:
-
-1. On vercel.com: **Add New → Project → Import** `justinsola/GRIDDY`.
-2. Framework preset: **Vite**. Build command `npm run build`, output directory
-   `dist`, install command `npm install`. These are the defaults.
-3. No environment variables. Click **Deploy**.
-4. Under **Settings → Domains**, add or keep `griddy-survey.vercel.app`.
-5. Under **Settings → Git**, keep the Production Branch as `main`.
-
-Optional CLI for deploying from your machine without git:
-`npm i -g vercel`, then `vercel` (preview) or `vercel --prod` (production). The
-Git workflow above is still the recommended way.
+Nothing else in the app should hard-code an absolute URL. Use router links
+(`<Link to="/history">`) and relative asset imports, and both work in local
+development (base `/`) and on the live site.

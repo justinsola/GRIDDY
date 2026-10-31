@@ -25,6 +25,6 @@ Sign-in and Supabase-backed cloud sync were removed to simplify the app to a loc
 - `App.tsx` header had a Sign In / avatar-initials-linking-to-profile / Sign Out cluster.
 - `surveysApi.ts` functions (`saveSurvey`, `listSurveys`, `loadSurvey`, `deleteSurvey`, `exportSurveys`, `importSurveys`, `getActiveSurveyQuestionCount`) all took an optional `userId`: when present they read/wrote a Supabase `surveys` table (`id, user_id, name, config jsonb, created_at, updated_at`) instead of `localStorage`, so a signed-in user's surveys synced across devices.
 
-**To reimplement:** restore the files above (recoverable from git history before this change), reintroduce `userId`-branching in `surveysApi.ts`, re-add the `surveys` Supabase table + RLS policy scoping rows to `auth.uid()`, add `@supabase/supabase-js` back to `package.json`, and restore `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` env vars (local `.env` + Vercel project settings).
+**To reimplement:** restore the files above (recoverable from git history before this change), reintroduce `userId`-branching in `surveysApi.ts`, re-add the `surveys` Supabase table + RLS policy scoping rows to `auth.uid()`, add `@supabase/supabase-js` back to `package.json`, and restore `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` env vars (local `.env` + the hosting provider's settings).
 
 **What stayed:** all local-storage save/load/delete, JSON export/import (survey backups), and Qualtrics `.qsf`/JS export/download — none of that depended on auth.

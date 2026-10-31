@@ -10,7 +10,7 @@ browser:
   GRIDDY.** GRIDDY is only the authoring tool.
 
 ```
- ┌──────────────── Browser (griddy-survey.vercel.app) ────────────────┐
+ ┌──────────────── Browser (www.jlsola.com/GRIDDY) ────────────────┐
  │                                                                    │
  │  ConfigPanel ──dispatch──▶ EditorContext (reducer, one GridConfig) │
  │       ▲                          │                                 │
@@ -36,7 +36,7 @@ browser:
 | React Router 6 | Client-side pages (`/`, `/history`, `/history/combine`) |
 | react-joyride | The guided "tour" in the editor |
 | Vitest + jsdom | Unit tests |
-| Vercel | Hosting (static files only) |
+| GitHub Pages | Hosting (static files only) |
 
 ## Pages (routes)
 
