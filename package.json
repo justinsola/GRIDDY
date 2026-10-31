@@ -6,7 +6,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/justinsola/GRIDDY-tool"
+    "url": "https://github.com/justinsola/GRIDDY"
   },
   "engines": {
     "node": ">=22"
