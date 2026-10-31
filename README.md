@@ -33,8 +33,8 @@ Developed by Michael Alfred Jenkins, Katun Jie Li, Suhas Puttoju, and Ishita Sai
 Clone the repository:
 
 ```bash
-git clone https://github.com/justinsola/GRIDDY-tool.git
-cd GRIDDY-tool
+git clone https://github.com/justinsola/GRIDDY.git
+cd GRIDDY
 ```
 
 Install dependencies:
