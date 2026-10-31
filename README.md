@@ -129,3 +129,12 @@ get preview URLs. See [docs/deploying.md](docs/deploying.md) for the full workfl
 - [docs/codebase.md](docs/codebase.md) — how the app is structured, the data model, and where to add features.
 - [docs/building.md](docs/building.md) — local setup, scripts, the build, and troubleshooting.
 - [docs/deploying.md](docs/deploying.md) — how Vercel deploys, the branch → preview → merge workflow, and rollbacks.
+
+## License
+
+GRIDDY is released under the [MIT License](LICENSE). Copyright (c) 2026 Justin Lucas Sola.
+
+The JavaScript that GRIDDY exports into your Qualtrics survey is covered by the
+same license. The exported code carries the copyright and permission notice as
+a comment, so a survey that embeds it already satisfies the license's one
+condition; no further attribution is required.

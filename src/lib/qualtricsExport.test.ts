@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  EXPORT_LICENSE_HEADER,
   sanitizeEmbeddedDataField,
   buildQualtricsSnippet,
+  buildQualtricsMultiQuestionSnippet,
   buildQualtricsQsf,
   buildQualtricsQsfForConfig,
   qsfEmbeddedFields,
@@ -466,5 +468,41 @@ describe("blocked cells in the exported grid", () => {
     expect(js).toContain("var isBlocked = !!blockedCells[key];");
     expect(js).toContain('selectionMode === "paint" && !isBlocked');
     expect(js).toContain('selectionMode === "dragdrop" && !isBlocked');
+  });
+});
+
+// ─── License header on exported code ─────────────────────────────────────────────
+
+describe("license header", () => {
+  const config = makeConfig();
+
+  it("starts every exported script with the MIT notice", () => {
+    const single = buildQualtricsSnippet(config);
+    const multi = buildQualtricsMultiQuestionSnippet([
+      { title: "Grid", embeddedDataField: "GridAssignments", config },
+    ]);
+    for (const js of [single, multi]) {
+      expect(js.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
+      expect(js).toContain("MIT License");
+      expect(js).toContain("Copyright (c) 2026 Justin Lucas Sola");
+      expect(js).toContain("https://github.com/justinsola/GRIDDY-tool");
+    }
+  });
+
+  it("keeps the header a single comment that does not break the script", () => {
+    // Exactly one open and one close, so the header cannot swallow code.
+    expect(EXPORT_LICENSE_HEADER.split("/*").length).toBe(2);
+    expect(EXPORT_LICENSE_HEADER.split("*/").length).toBe(2);
+    expect(EXPORT_LICENSE_HEADER.trimEnd().endsWith("*/")).toBe(true);
+    // The snippet still parses and runs with the header in place.
+    expect(() => new Function(buildQualtricsSnippet(config))).not.toThrow();
+  });
+
+  it("carries the header into the .qsf question JavaScript", () => {
+    const qsf = JSON.parse(buildQualtricsQsfForConfig(config));
+    const question = qsf.SurveyElements.find(
+      (el: { Element: string }) => el.Element === "SQ",
+    );
+    expect(question.Payload.QuestionJS.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
   });
 });
