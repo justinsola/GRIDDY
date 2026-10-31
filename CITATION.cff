@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use GRIDDY, please cite it as below."
+type: software
+title: GRIDDY
+version: 0.9.0
+license: MIT
+repository-code: "https://github.com/justinsola/GRIDDY-tool"
+abstract: "A web-based grid question editor for building custom survey grid questions and exporting them into Qualtrics."
+authors:
+  - family-names: Sola
+    given-names: Justin Lucas
+  - family-names: Jenkins
+    given-names: Michael Alfred
+  - family-names: Li
+    given-names: Katun Jie
+  - family-names: Puttoju
+    given-names: Suhas
+  - family-names: Siddamreddy
+    given-names: Ishita Sai
+  - family-names: Filmeyer
+    given-names: Samuel
