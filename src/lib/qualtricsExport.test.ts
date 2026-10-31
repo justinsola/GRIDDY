@@ -485,7 +485,7 @@ describe("license header", () => {
       expect(js.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
       expect(js).toContain("MIT License");
       expect(js).toContain("Copyright (c) 2026 Justin Lucas Sola");
-      expect(js).toContain("https://github.com/justinsola/GRIDDY-tool");
+      expect(js).toContain("https://github.com/justinsola/GRIDDY");
     }
   });
 

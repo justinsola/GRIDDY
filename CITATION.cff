@@ -4,7 +4,7 @@ type: software
 title: GRIDDY
 version: 0.9.0
 license: MIT
-repository-code: "https://github.com/justinsola/GRIDDY-tool"
+repository-code: "https://github.com/justinsola/GRIDDY"
 abstract: "A web-based grid question editor for building custom survey grid questions and exporting them into Qualtrics."
 authors:
   - family-names: Sola

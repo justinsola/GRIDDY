@@ -1,0 +1,240 @@
+<!doctype html>
+<!--
+  Source of docs/GRIDDY-docs.pdf. To regenerate after editing this file or the
+  screenshots in img/, print it with headless Chrome (Letter size, no header/footer):
+
+    chrome --headless=new --disable-gpu --no-pdf-header-footer --virtual-time-budget=8000       --print-to-pdf=../GRIDDY-docs.pdf docs.html
+
+  On Windows, chrome is "C:\Program Files\Google\Chrome\Application\chrome.exe";
+  on macOS, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GRIDDY Documentation</title>
+<style>
+  @page { size: Letter; margin: 0.8in 0.85in; }
+  :root {
+    --ink: #1a1d23; --muted: #5b6270; --rule: #d9dde4; --accent: #e8650f; --tint: #fff4ec; --code: #f3f4f6;
+  }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; }
+  code, pre { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; font-size: 9.2pt; }
+  code { background: var(--code); padding: 1px 4px; border-radius: 3px; }
+  pre { background: var(--code); border-left: 3px solid var(--accent); padding: 9px 12px; margin: 8px 0 12px; white-space: pre-wrap; }
+  pre code { background: none; padding: 0; }
+  a { color: inherit; text-decoration: none; }
+  h1 { font-size: 22pt; margin: 0 0 14px; letter-spacing: -0.01em; }
+  h1 .num { color: var(--accent); margin-right: 10px; }
+  h2 { font-size: 13pt; margin: 20px 0 6px; }
+  h3 { font-size: 11pt; margin: 14px 0 4px; }
+  p { margin: 6px 0 8px; }
+  ul { margin: 4px 0 10px 20px; padding: 0; }
+  li { margin: 3px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0 12px; font-size: 9.8pt; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; }
+  .section { break-before: page; }
+  .crumb { color: var(--muted); font-size: 9pt; margin-bottom: 18px; }
+  figure { margin: 10px 0 14px; break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 4px; }
+  figure.narrow img { max-width: 46%; }
+  figcaption { color: var(--muted); font-size: 9pt; margin-top: 5px; }
+  .note { background: var(--tint); border-left: 3px solid var(--accent); padding: 8px 12px; margin: 10px 0; }
+  .diagram { font-family: Consolas, Menlo, monospace; font-size: 9pt; white-space: pre; background: none; border: none; padding: 4px 0 0 8px; color: var(--ink); }
+
+  /* Cover */
+  .cover { height: 8.4in; display: flex; flex-direction: column; justify-content: center; }
+  .cover .title { font-size: 46pt; font-weight: 800; letter-spacing: 0.04em; color: var(--accent); margin: 0; }
+  .cover .sub { font-size: 16pt; color: var(--ink); margin: 6px 0 26px; }
+  .cover .meta { color: var(--muted); font-size: 10.5pt; }
+  .cover .hint { color: var(--muted); font-size: 9.5pt; margin-top: 60px; }
+
+  /* Contents */
+  .toc { list-style: none; margin: 14px 0 0; padding: 0; }
+  .toc li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+  .toc .n { color: var(--accent); font-weight: 700; }
+  .toc .t { font-weight: 600; }
+  .toc .d { color: var(--muted); font-size: 9.5pt; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <p class="title">GRIDDY</p>
+  <p class="sub">Project documentation</p>
+  <p class="meta">www.jlsola.com/GRIDDY &nbsp;·&nbsp; github.com/justinsola/GRIDDY &nbsp;·&nbsp; October 2026</p>
+  <p class="hint">Contents on the next page ↓</p>
+</section>
+
+<section class="section" id="contents">
+  <h1>Contents</h1>
+  <ol class="toc">
+    <li><span class="n">1.</span><span><span class="t">Overview</span><br><span class="d">What GRIDDY is and how it fits together</span></span></li>
+    <li><span class="n">2.</span><span><span class="t">Using GRIDDY</span><br><span class="d">A visual walkthrough of the app</span></span></li>
+    <li><span class="n">3.</span><span><span class="t">The codebase</span><br><span class="d">Pages, data model, state, key files</span></span></li>
+    <li><span class="n">4.</span><span><span class="t">Building locally</span><br><span class="d">Setup, commands, before you push</span></span></li>
+    <li><span class="n">5.</span><span><span class="t">Deploying to GitHub Pages</span><br><span class="d">Merge to deploy, the feature workflow, rollbacks</span></span></li>
+    <li><span class="n">6.</span><span><span class="t">Keeping it healthy</span><br><span class="d">404.html, checks, license, and recent cleanup</span></span></li>
+  </ol>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">1.</span>Overview</h1>
+  <p>GRIDDY is a browser-only tool for building grid survey questions and exporting them to Qualtrics. There's no backend or database.</p>
+  <ul>
+    <li>Researchers design a grid in the editor and preview it live.</li>
+    <li>Surveys are saved in the browser's <code>localStorage</code>. They can be backed up as JSON.</li>
+    <li>Export produces a <code>.qsf</code> file that Qualtrics imports directly, or a JS snippet to paste.</li>
+    <li>Respondents answer inside Qualtrics. Answers are stored as JSON in embedded-data fields (<code>GridAssignments</code>, or <code>GridPrefills</code> / <code>GridResponses</code> in experimental mode).</li>
+  </ul>
+<pre class="diagram">Editor (ConfigPanel) → EditorContext (state) → PreviewPanel
+                              ↓
+          surveysApi → localStorage    qualtricsExport → .qsf / JS → Qualtrics</pre>
+  <p>Stack: React 18, TypeScript, Vite, Tailwind, React Router, Vitest. Hosted on GitHub Pages as static files. Licensed under the MIT License.</p>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">2.</span>Using GRIDDY</h1>
+
+  <h2>The editor</h2>
+  <p>Settings on the left, live preview on the right. Pick a category in the Placing row, then click cells to fill them in. Name the survey at the top and click Save.</p>
+  <figure><img src="img/editor.png" alt="The GRIDDY editor"><figcaption>The editor at <code>/</code>: question &amp; grid settings (01), categories (02), and the live preview.</figcaption></figure>
+
+  <h2>How respondents answer, and experiments</h2>
+  <p>Section 03 picks the input method. Section 04 turns on experimental mode, where the grid is pre-filled and respondents react to it.</p>
+  <figure><img src="img/respondent-options.png" alt="Sections 03 and 04 of the editor"></figure>
+
+  <h2>Respondent preview</h2>
+  <p>Shows exactly what respondents will see in Qualtrics. It runs the real exported script, and answers here aren't saved.</p>
+  <figure class="narrow"><img src="img/respondent-preview.png" alt="The Respondent preview tab"><figcaption>The Respondent preview tab.</figcaption></figure>
+
+  <h2>My Surveys</h2>
+  <figure><img src="img/my-surveys.png" alt="The My Surveys page"><figcaption><code>/history</code>: surveys saved in this browser, with JSON backup and restore.</figcaption></figure>
+
+  <h2>Export to Qualtrics</h2>
+  <p>Click <strong>Export to Qualtrics</strong>, then <strong>Download .qsf</strong>, and import that file in Qualtrics. The dialog lists the steps and the field the answers are saved to.</p>
+  <figure><img src="img/export-dialog.png" alt="The export dialog"><figcaption>The export dialog. A raw-JavaScript option is tucked away under “Advanced”.</figcaption></figure>
+
+  <h2>Combining several grids into one survey</h2>
+  <p>From My Surveys, click <strong>Make multi-question survey</strong>. Add saved grids, order them, name each data field, then download one <code>.qsf</code>.</p>
+  <figure><img src="img/combine-surveys.png" alt="The combine surveys page"><figcaption><code>/history/combine</code>: each grid becomes its own page in Qualtrics.</figcaption></figure>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">3.</span>The codebase</h1>
+
+  <h2>Pages</h2>
+  <table>
+    <tr><th>URL</th><th>File</th><th>Purpose</th></tr>
+    <tr><td><code>/</code></td><td><code>App.tsx</code></td><td>The editor and live preview</td></tr>
+    <tr><td><code>/history</code></td><td><code>pages/HistoryPage.tsx</code></td><td>My Surveys: open, delete, JSON backup</td></tr>
+    <tr><td><code>/history/combine</code></td><td><code>pages/CombineSurveysPage.tsx</code></td><td>Combine several surveys into one <code>.qsf</code></td></tr>
+  </table>
+
+  <h2>Data model (<code>src/grid-types.ts</code>)</h2>
+  <p>A survey is a <code>GridConfig</code> with four parts: <strong>layout</strong> (rows, cols, center cell, barriers), <strong>tuning</strong> (sizes), <strong>survey</strong> (categories, selection mode) and optional <strong>experimental</strong> (pre-filled grid + response labels). Cells are keyed <code>"r{row}-c{col}"</code>, 1-based.</p>
+
+  <h2>State (<code>src/EditorContext.tsx</code>)</h2>
+  <p>One reducer holds the survey being edited. Components read it with <code>useEditor()</code> and change it by dispatching actions such as <code>updateLayout</code>, <code>updateSurvey</code>, <code>setConfig</code> or <code>newSurvey</code>.</p>
+
+  <h2>Key files</h2>
+  <table>
+    <tr><td><code>components/ConfigPanel.tsx</code></td><td>Left-hand editor UI</td></tr>
+    <tr><td><code>components/PreviewPanel.tsx</code></td><td>Live preview and Export modal</td></tr>
+    <tr><td><code>components/RespondentPreview.tsx</code></td><td>Runs the real exported script</td></tr>
+    <tr><td><code>lib/qualtricsExport.ts</code></td><td>Builds the Qualtrics JS and <code>.qsf</code></td></tr>
+    <tr><td><code>lib/surveysApi.ts</code></td><td>Save, load and import surveys (localStorage)</td></tr>
+    <tr><td><code>lib/imageInput.ts</code></td><td>Compresses uploaded images into the survey</td></tr>
+  </table>
+
+  <h2>Adding a new setting</h2>
+  <p>Add it to the type → give it a default in <code>createDefaultConfig</code> and <code>normalizeConfig</code> → add a control in <code>ConfigPanel</code> → render it in <code>PreviewPanel</code> and in <code>qualtricsExport.ts</code> → add a test.</p>
+  <div class="note">The Qualtrics script is plain JavaScript, not React, so visual features have to be built in both places. Use the respondent preview to check that they match.</div>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">4.</span>Building locally</h1>
+  <p>Requires Node 22+ and git. No environment variables are needed.</p>
+<pre><code>git clone https://github.com/justinsola/GRIDDY.git
+cd GRIDDY
+npm install
+npm run dev        # http://localhost:5173</code></pre>
+  <table>
+    <tr><th>Command</th><th>Does</th></tr>
+    <tr><td><code>npm run dev</code></td><td>Dev server with hot reload</td></tr>
+    <tr><td><code>npm run build</code></td><td>Type-check, then bundle to <code>dist/</code>. This is what the Pages deploy runs.</td></tr>
+    <tr><td><code>npm run preview</code></td><td>Serve the built <code>dist/</code> locally</td></tr>
+    <tr><td><code>npm test</code></td><td>Run the Vitest tests</td></tr>
+    <tr><td><code>npm run lint</code></td><td>ESLint</td></tr>
+  </table>
+  <p><strong>Before pushing:</strong> run <code>npm run build</code> (and ideally <code>npm test</code> and <code>npm run lint</code>). If it fails locally, the deploy fails too. Unused variables count as build errors.</p>
+  <p>To see exactly what will be deployed, build with the live site's path and preview it at <code>http://localhost:4173/GRIDDY/</code>:</p>
+<pre><code>BASE_PATH=/GRIDDY/ npm run build
+npm run preview</code></pre>
+  <p>Saved surveys are stored per site: localhost and the live site keep separate lists. Use Export/Import JSON to move them.</p>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">5.</span>Deploying to GitHub Pages</h1>
+  <p>A GitHub Actions workflow (<code>.github/workflows/pages.yml</code>) publishes the site. <strong>Merging to <code>main</code> is the deploy.</strong> There's no separate deploy command.</p>
+  <table>
+    <tr><th>Push to…</th><th>Result</th></tr>
+    <tr><td><code>main</code></td><td>The workflow builds the app and the live site updates in a minute or two</td></tr>
+    <tr><td>Any other branch or PR</td><td>Only the CI checks run. The live site is untouched.</td></tr>
+  </table>
+  <p>The site is served at <strong>https://www.jlsola.com/GRIDDY/</strong>: a project site on GitHub Pages lives at the owner's Pages domain plus the repository name. The workflow passes the repository name to the build as <code>BASE_PATH</code>, so renaming the repository moves the site with no code change. Under the repo's <strong>Settings → Pages</strong>, the source must stay <strong>GitHub Actions</strong>.</p>
+
+  <h2>Adding a feature</h2>
+<pre><code>git switch main &amp;&amp; git pull
+git switch -c feature/my-change
+# ...build it, check npm run build...
+git add -A &amp;&amp; git commit -m "My change"
+git push -u origin feature/my-change</code></pre>
+  <ol>
+    <li>Open a pull request into <code>main</code> on GitHub.</li>
+    <li>Wait for the green check, <strong>CI / Build, test, lint</strong> (GitHub Actions). Red means something failed: click <strong>Details</strong>.</li>
+    <li>Merge the PR. The live site updates automatically; watch the run under <strong>Actions → Deploy to GitHub Pages</strong>.</li>
+  </ol>
+
+  <h2>If the live site breaks</h2>
+  <ul>
+    <li><strong>Via git:</strong> <code>git revert &lt;commit&gt;</code> on <code>main</code> and push. The workflow deploys a build without the change.</li>
+    <li><strong>Redeploy the last good build:</strong> under <strong>Actions → Deploy to GitHub Pages</strong>, open the last successful run and choose <strong>Re-run all jobs</strong>.</li>
+  </ul>
+  <p>Everything needed to deploy lives in this repository and the owner's GitHub account. No third-party dashboard is involved.</p>
+</section>
+
+<section class="section">
+  <div class="crumb">↑ &nbsp;Contents</div>
+  <h1><span class="num">6.</span>Keeping it healthy</h1>
+
+  <h2>404.html</h2>
+  <p>The app has client-side routes, so there's no real <code>/history</code> file. GitHub Pages serves <code>404.html</code> for any path that isn't a real file, and the deploy workflow makes <code>404.html</code> a copy of <code>index.html</code>, so loading or refreshing any page works. Two pieces of code keep routes and assets on the <code>/GRIDDY/</code> path: <code>vite.config.ts</code> sets Vite's <code>base</code> from <code>BASE_PATH</code>, and <code>src/main.tsx</code> gives React Router the same path as its <code>basename</code>. Don't hard-code absolute URLs; use router links and relative asset imports.</p>
+
+  <h2>Checks</h2>
+  <p><code>npm run build</code>, <code>npm test</code> and <code>npm run lint</code> all pass cleanly on <code>main</code>. GitHub Actions (<code>.github/workflows/ci.yml</code>) runs all three on every PR and every push to <code>main</code>. If one fails, something you changed caused it.</p>
+  <p>CI installs with <code>npm ci</code>, so when you change dependencies, commit the updated <code>package-lock.json</code> too.</p>
+
+  <h2>License</h2>
+  <p>GRIDDY is released under the MIT License, Copyright (c) 2026 Justin Lucas Sola. The JavaScript that GRIDDY exports into a Qualtrics survey carries the copyright and permission notice as a comment, so a survey that embeds it already satisfies the license's one condition.</p>
+
+  <h2>Cleanup done (October 2026)</h2>
+  <ul>
+    <li>Fixed the 404 when refreshing <code>/history</code> and <code>/history/combine</code>.</li>
+    <li>Updated an outdated test and fixed all lint errors and warnings.</li>
+    <li>Added GitHub Actions CI and synced <code>package-lock.json</code>.</li>
+    <li>Removed the unused <code>LayoutTab.tsx</code> and <code>SurveyTab.tsx</code>, and the unused <code>localforage</code> and <code>react-webcam</code> packages.</li>
+    <li>Transferred the repository to <code>justinsola/GRIDDY</code>, adopted the MIT License, added <code>CITATION.cff</code>, and gave the README its mascot.</li>
+    <li>Moved hosting from Vercel to GitHub Pages at www.jlsola.com/GRIDDY.</li>
+  </ul>
+</section>
+
+</body>
+</html>
