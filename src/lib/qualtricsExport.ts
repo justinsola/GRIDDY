@@ -621,8 +621,28 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			cellRef.style.backgroundColor = hexToRgba(assignedColor, 0.2);
 			cellRef.style.borderColor = assignedColor;
 
+			// Show the category's image above its name, as the editor's design
+			// preview does.
+			if (meta.imageUrl) {
+				var assignedImgWrap = document.createElement("div");
+				assignedImgWrap.style.flex = "1";
+				assignedImgWrap.style.minHeight = "0";
+				assignedImgWrap.style.display = "flex";
+				assignedImgWrap.style.alignItems = "center";
+				assignedImgWrap.style.justifyContent = "center";
+				assignedImgWrap.style.overflow = "hidden";
+				var assignedImg = document.createElement("img");
+				assignedImg.src = meta.imageUrl;
+				assignedImg.alt = assigned;
+				assignedImg.style.maxWidth = "100%";
+				assignedImg.style.maxHeight = "100%";
+				assignedImg.style.objectFit = "contain";
+				assignedImgWrap.appendChild(assignedImg);
+				cellRef.appendChild(assignedImgWrap);
+			}
+
 			var assignedLabel = document.createElement("div");
-			assignedLabel.style.flex = "1";
+			assignedLabel.style.flex = meta.imageUrl ? "0 0 auto" : "1";
 			assignedLabel.style.minHeight = "0";
 			assignedLabel.style.display = "flex";
 			assignedLabel.style.alignItems = "center";

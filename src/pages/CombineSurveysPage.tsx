@@ -41,6 +41,14 @@ function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfI
   };
 }
 
+/** The embedded-data field name(s) a question's answers are saved under. */
+function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
+  const item = buildQsfItem(survey, fieldLabel);
+  return [item.embeddedDataField, item.prefillsField, item.responsesField]
+    .filter(Boolean)
+    .join(" and ");
+}
+
 function makeQsfFileName() {
   const iso = new Date().toISOString().replace(/[:.]/g, "-");
   return `griddy-qualtrics-${iso}.qsf`;
@@ -263,8 +271,14 @@ export default function CombineSurveysPage() {
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent-tint text-xs font-bold text-accent">
                       {index + 1}
                     </span>
-                    <span className="font-semibold text-ink">
-                      {survey.name || survey.id.slice(0, 8)}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-semibold text-ink">
+                        {survey.name || survey.id.slice(0, 8)}
+                      </span>
+                      <span className="break-all font-mono text-[10.5px] text-ink-faint">
+                        Saved in Qualtrics as{" "}
+                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? survey.name ?? "")}
+                      </span>
                     </span>
                   </div>
 

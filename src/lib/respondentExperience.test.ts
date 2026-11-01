@@ -278,6 +278,24 @@ describe("reactions in an experiment", () => {
   });
 });
 
+describe("dropdown cells", () => {
+  it("show the chosen category's image above its name", () => {
+    const base = withSurvey({
+      selectionMode: "dropdown",
+      categoryMeta: { Family: { color: "#f87171", imageUrl: "data:image/png;base64,AAAA" } },
+    });
+    const r = run(base);
+    const first = cells(r.container)[0];
+    const select = first.querySelector("select")!;
+    select.value = "Family";
+    select.dispatchEvent(new Event("change"));
+    const img = cells(r.container)[0].querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.alt).toBe("Family");
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+  });
+});
+
 describe("drag and drop", () => {
   it("ignores dropped text that is not one of the grid's labels", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));
