@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { buildQualtricsQsf, buildQualtricsSnippet } from "./qualtricsExport";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { buildQualtricsQsf, buildQualtricsSnippet, QualtricsExportOptions } from "./qualtricsExport";
 import type { GridConfig } from "../grid-types";
 
 /**
@@ -69,46 +69,106 @@ function experimental(
   };
 }
 
-interface Run {
-  container: HTMLElement;
+/** One Qualtrics page: what its grids record, and its own Next button. */
+interface Page {
   embedded: Record<string, string>;
+  /** Embedded data recorded on earlier pages. */
+  saved: Record<string, string>;
   nextClicks: number;
   nativeNextHidden: boolean;
+  unloads: Array<() => void>;
 }
 
-function run(config: GridConfig, saved: Record<string, string> = {}, questionHtml = ""): Run {
-  const result: Run = {
-    container: document.createElement("div"),
-    embedded: {},
-    nextClicks: 0,
-    nativeNextHidden: false,
-  };
+function newPage(saved: Record<string, string> = {}): Page {
+  return { embedded: {}, saved, nextClicks: 0, nativeNextHidden: false, unloads: [] };
+}
+
+interface Run {
+  container: HTMLElement;
+  page: Page;
+  embedded: Record<string, string>;
+  readonly nextClicks: number;
+  readonly nativeNextHidden: boolean;
+}
+
+interface RunOptions {
+  /** Put this grid on a page that already holds other grids. */
+  page?: Page;
+  questionId?: string;
+  /** Where the question sits, for example a block hidden by display logic. */
+  parent?: HTMLElement;
+  fields?: QualtricsExportOptions;
+}
+
+function run(
+  config: GridConfig,
+  saved: Record<string, string> = {},
+  questionHtml = "",
+  options: RunOptions = {},
+): Run {
+  const page = options.page ?? newPage(saved);
+  const container = document.createElement("div");
   const readyCallbacks: Array<() => void> = [];
   (globalThis as unknown as { Qualtrics: unknown }).Qualtrics = {
     SurveyEngine: {
       addOnload: () => {},
       addOnReady: (cb: () => void) => readyCallbacks.push(cb),
-      addOnUnload: () => {},
+      addOnUnload: (cb: () => void) => page.unloads.push(cb),
       setEmbeddedData: (field: string, value: string) => {
-        result.embedded[field] = value;
+        page.embedded[field] = value;
       },
-      getEmbeddedData: (field: string) => saved[field] ?? "",
+      getEmbeddedData: (field: string) => page.embedded[field] ?? page.saved[field] ?? "",
     },
   };
-  result.container.innerHTML = questionHtml;
-  document.body.appendChild(result.container);
+  container.innerHTML = questionHtml;
+  (options.parent ?? document.body).appendChild(container);
   const question = {
-    getQuestionTextContainer: () => result.container,
+    questionId: options.questionId,
+    getQuestionTextContainer: () => container,
     clickNextButton: () => {
-      result.nextClicks += 1;
+      page.nextClicks += 1;
     },
     hideNextButton: () => {
-      result.nativeNextHidden = true;
+      page.nativeNextHidden = true;
+    },
+    showNextButton: () => {
+      page.nativeNextHidden = false;
     },
   };
-  new Function(buildQualtricsSnippet(config))();
+  new Function(buildQualtricsSnippet(config, options.fields))();
   readyCallbacks.forEach((cb) => cb.call(question));
-  return result;
+  return {
+    container,
+    page,
+    embedded: page.embedded,
+    get nextClicks() {
+      return page.nextClicks;
+    },
+    get nativeNextHidden() {
+      return page.nativeNextHidden;
+    },
+  };
+}
+
+// Each test starts on an empty page: grids left over from another test would
+// otherwise share its Next button.
+beforeEach(() => {
+  document.body.innerHTML = "";
+  const w = window as unknown as Record<string, unknown>;
+  delete w.griddyPageGrids;
+  delete w.griddyFieldOwners;
+  delete w.griddyHidNext;
+  delete w.griddyNextOwner;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** The grid's own Next button, and whether it is shown. */
+function gridNext(container: HTMLElement): { button: HTMLButtonElement; shown: boolean } {
+  const next = button(container, "Next");
+  return { button: next, shown: next.parentElement!.style.display !== "none" };
 }
 
 function cells(container: HTMLElement): HTMLElement[] {
@@ -210,11 +270,10 @@ describe("empty cells when the respondent presses Next", () => {
     expect(r.nextClicks).toBe(1);
   });
 
-  it("lets respondents go straight on when the researcher allows empty cells", () => {
+  it("leaves only Qualtrics' own Next when the researcher allows empty cells", () => {
     const r = run(withSurvey({ skipBehavior: "allow" }));
-    button(r.container, "Next").click();
-    expect(r.nextClicks).toBe(1);
     expect(r.nativeNextHidden).toBe(false);
+    expect(gridNext(r.container).shown).toBe(false);
   });
 
   it("requires every cell when the researcher says so", () => {
@@ -232,11 +291,46 @@ describe("empty cells when the respondent presses Next", () => {
     expect(run(makeConfig()).nativeNextHidden).toBe(true);
   });
 
-  it("does not check a grid that respondents only look at", () => {
+  it("does not check or record a grid that respondents only look at", () => {
     const r = run(withSurvey({ allowInteraction: false }));
     expect(r.nativeNextHidden).toBe(false);
+    expect(gridNext(r.container).shown).toBe(false);
+    expect(r.embedded).toEqual({});
+  });
+
+  it("gives Qualtrics' Next back when the page is left", () => {
+    const r = run(makeConfig());
+    expect(r.nativeNextHidden).toBe(true);
+    r.page.unloads.forEach((unload) => unload());
+    expect(r.nativeNextHidden).toBe(false);
+  });
+
+  it("announces the reminder once per press of Next, apart from the visible box", async () => {
+    const r = run(makeConfig());
     button(r.container, "Next").click();
-    expect(r.nextClicks).toBe(1);
+    expect(reminder(r.container).getAttribute("role")).toBeNull();
+    const announcer = r.container.querySelector<HTMLElement>("[data-griddy-announce]")!;
+    expect(announcer.getAttribute("role")).toBe("alert");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(announcer.textContent).toBe("8 cells are still empty. Use Show me to find them, or Continue anyway.");
+    cells(r.container)[0].click();
+    expect(reminder(r.container).textContent).toContain("7 cells are still empty");
+    expect(announcer.textContent).toContain("8 cells");
+  });
+
+  it("Show me brings the first empty cell out of view into view and focuses it", () => {
+    const r = run(makeConfig());
+    const box = (left: number) => () => ({ left, right: left + 100, top: 0, bottom: 120, width: 100, height: 120 }) as DOMRect;
+    const scroller = r.container.querySelector<HTMLElement>("[data-griddy-scroller]")!;
+    scroller.getBoundingClientRect = box(0);
+    cells(r.container).forEach((cell, i) => {
+      cell.getBoundingClientRect = box((i % 3) * 110);
+    });
+    // The frame shows only the first column; r1-c2 is the first empty cell out of view.
+    scroller.getBoundingClientRect = () => ({ left: 0, right: 105, top: 0, bottom: 400, width: 105, height: 400 }) as DOMRect;
+    button(r.container, "Next").click();
+    button(r.container, "Show me").click();
+    expect(document.activeElement).toBe(cells(r.container)[1]);
   });
 });
 
@@ -423,13 +517,49 @@ describe("keyboard and screen readers", () => {
     expect(first.getAttribute("aria-label")).toBe("Row 1, column 1: Family");
   });
 
+  // Enter or Space on a button, and a screen reader activating it, arrive as
+  // a click with no pointer; a mouse click carries a click count.
+  const assistiveClick = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
+  const mouseClick = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+
   it("lets drag-and-drop be done from the keyboard: pick up a chip, then place it", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));
     const chip = button(r.container, "Friends");
-    press(chip);
+    assistiveClick(chip);
     expect(chip.getAttribute("aria-pressed")).toBe("true");
     press(cells(r.container)[2]);
     expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c3": "Friends" });
+  });
+
+  it("lets a screen reader pick up and place a label with clicks alone", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    assistiveClick(button(r.container, "Family"));
+    assistiveClick(cells(r.container)[1]);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c2": "Family" });
+  });
+
+  it("leaves mouse clicks alone, so drag and drop stays a drag", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    const chip = button(r.container, "Family");
+    mouseClick(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    assistiveClick(chip);
+    mouseClick(cells(r.container)[1]);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+  });
+
+  it("leaves Enter on a cell's clear button to that button", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    assistiveClick(button(r.container, "Friends"));
+    press(cells(r.container)[0]);
+    assistiveClick(button(r.container, "Family"));
+    const clear = cells(r.container)[0].querySelector<HTMLButtonElement>('button[title="Clear cell"]')!;
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    clear.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    clear.click();
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
   });
 
   it("names every dropdown", () => {
@@ -503,6 +633,27 @@ describe("going back to the grid, or resuming later", () => {
     expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
   });
 
+  it("does not show or overwrite answers another question saved under the same field", () => {
+    const page = newPage();
+    const first = run(makeConfig(), {}, "", { page, questionId: "QID1" });
+    cells(first.container)[0].click();
+    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    first.container.remove();
+    // A copy of the grid on the next page, under another question.
+    const copy = run(makeConfig(), {}, "", { page, questionId: "QID2" });
+    expect(cells(copy.container)[0].textContent).not.toContain("Family");
+    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    copy.container.remove();
+    // Going back to the first question shows its answers again.
+    const back = run(makeConfig(), {}, "", { page, questionId: "QID1" });
+    expect(cells(back.container)[0].textContent).toContain("Family");
+  });
+
+  it("draws fresh pre-fills when the saved ones do not fit this grid", () => {
+    const r = run(experimental(), { GridPrefills: '{"r1-c1":"Strangers"}' });
+    expect(JSON.parse(r.embedded.GridPrefills)).toEqual({ "r1-c1": "Family" });
+  });
+
   it("shows the same pre-fills and reactions rather than drawing new ones", () => {
     const r = run(experimental({ prefillMode: "shuffle" }), {
       GridPrefills: '{"r1-c3":"Friends"}',
@@ -565,5 +716,112 @@ describe("centre cell, background and readability", () => {
     select.value = "Friends";
     select.dispatchEvent(new Event("change"));
     expect(document.activeElement).toBe(cells(r.container)[0].querySelector("select"));
+  });
+});
+
+describe("display logic and several grids on one page", () => {
+  type Callback = () => void;
+  let observers: Callback[] = [];
+  class FakeResizeObserver {
+    constructor(callback: Callback) {
+      observers.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+  }
+  beforeEach(() => {
+    observers = [];
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver;
+  });
+  afterEach(() => {
+    delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+  const layoutChanged = () => observers.forEach((callback) => callback());
+
+  it("leaves Qualtrics' Next alone and records nothing while display logic hides the grid", () => {
+    const block = document.createElement("div");
+    block.style.display = "none";
+    document.body.appendChild(block);
+    const r = run(makeConfig(), {}, "", { parent: block });
+    expect(r.nativeNextHidden).toBe(false);
+    expect(r.embedded).toEqual({});
+
+    block.style.display = "block";
+    layoutChanged();
+    expect(r.nativeNextHidden).toBe(true);
+    expect(r.embedded.GridAssignments).toBe("{}");
+
+    block.style.display = "none";
+    layoutChanged();
+    expect(r.nativeNextHidden).toBe(false);
+  });
+
+  it("shows one Next, under the last grid, and it checks every grid on the page", () => {
+    const page = newPage();
+    const first = run(withSurvey({ skipBehavior: "force" }), {}, "", { page, questionId: "QID1" });
+    const second = run(makeConfig(), {}, "", {
+      page,
+      questionId: "QID2",
+      fields: { embeddedDataField: "GridAssignments_B" },
+    });
+    expect(gridNext(first.container).shown).toBe(false);
+    expect(gridNext(second.container).shown).toBe(true);
+
+    cells(second.container).forEach((cell) => cell.click());
+    gridNext(second.container).button.click();
+    expect(page.nextClicks).toBe(0);
+    expect(reminder(first.container).style.display).toBe("block");
+
+    cells(first.container).forEach((cell) => cell.click());
+    gridNext(second.container).button.click();
+    expect(page.nextClicks).toBe(1);
+    expect(Object.keys(JSON.parse(page.embedded.GridAssignments))).toHaveLength(8);
+    expect(Object.keys(JSON.parse(page.embedded.GridAssignments_B))).toHaveLength(8);
+  });
+});
+
+describe("right-to-left surveys", () => {
+  it("keeps column 1 on the left so the scroll arrows work", () => {
+    const r = run(makeConfig());
+    expect(r.container.querySelector<HTMLElement>("[data-griddy-frame]")!.style.direction).toBe("ltr");
+  });
+});
+
+describe("finger drags near the edge", () => {
+  it("keeps scrolling the grid while the finger rests at the edge", () => {
+    vi.useFakeTimers();
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    const scroller = r.container.querySelector<HTMLElement>("[data-griddy-scroller]")!;
+    let left = 0;
+    Object.defineProperty(scroller, "scrollLeft", {
+      configurable: true,
+      get: () => left,
+      set: (value: number) => {
+        left = value;
+      },
+    });
+    scroller.getBoundingClientRect = () => ({ left: 0, right: 300, top: 0, bottom: 600, width: 300, height: 600 }) as DOMRect;
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => cells(r.container)[0];
+    const chip = button(r.container, "Friends");
+    const fire = (type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 300 });
+      Object.defineProperty(event, "pointerType", { value: "touch" });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      chip.dispatchEvent(event);
+    };
+    try {
+      fire("pointerdown", 150);
+      fire("pointermove", 295); // into the right edge band, then the finger rests
+      const afterMove = left;
+      vi.advanceTimersByTime(160);
+      expect(left).toBeGreaterThan(afterMove + 50);
+      fire("pointerup", 295);
+      const afterDrop = left;
+      vi.advanceTimersByTime(160);
+      expect(left).toBe(afterDrop);
+    } finally {
+      document.elementFromPoint = original;
+    }
   });
 });

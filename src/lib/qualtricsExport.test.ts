@@ -303,7 +303,7 @@ describe("buildQualtricsSnippet experimental respondent input methods", () => {
     expect(js).toContain('respToolbarLabel.textContent = "Reacting:"');
     expect(js).toContain("experimentalResponses[cellKey] = activeResponseLabel");
     // drag-drop: draggable reaction tray + clear chip
-    expect(js).toContain("Drag a reaction onto a cell:");
+    expect(js).toContain("Drag a reaction onto a cell, or select a reaction and then a cell:");
     expect(js).toContain("createResponseChip");
     expect(js).toContain("__CLEAR_RESP__");
     // dropdown: per-cell select still available
