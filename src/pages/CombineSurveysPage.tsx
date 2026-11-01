@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
 import { findFieldCollision } from "../lib/combineFields";
-import { hasUnsavedChanges, useEditor } from "../EditorContext";
+import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
@@ -18,12 +18,14 @@ function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfI
   // A label with no letters or digits would clean up to nothing, leaving
   // only the shared default name; use the survey's id instead.
   const base = /[A-Za-z0-9]/.test(fieldLabel) ? fieldLabel.trim() : fallback;
-  const isExperimental = !!survey.config.experimental?.enabled;
+  // Saved surveys go through the same repairs as a survey opened in the editor.
+  const config = normalizeConfig(survey.config);
+  const isExperimental = !!config.experimental?.enabled;
 
   if (isExperimental) {
     return {
       title: survey.name || survey.id,
-      config: survey.config,
+      config,
       prefillsField: sanitizeEmbeddedDataField(
         `GridPrefills_${base}`,
         `GridPrefills_${fallback}`,
@@ -37,7 +39,7 @@ function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfI
 
   return {
     title: survey.name || survey.id,
-    config: survey.config,
+    config,
     embeddedDataField: sanitizeEmbeddedDataField(
       `GridAssignments_${base}`,
       `GridAssignments_${fallback}`,
@@ -159,7 +161,8 @@ export default function CombineSurveysPage() {
       setNotice(
         `Downloaded a Qualtrics .qsf with ${ordered.length} grid${ordered.length === 1 ? "" : "s"} ` +
           `in the order shown, and ${fieldCount} embedded field${fieldCount === 1 ? "" : "s"}. ` +
-          `In Qualtrics: Projects → Create project → Survey → "Import a QSF file", then Publish.`,
+          `In Qualtrics: Create a new project → Survey → Get started → "Import a QSF file", then Publish. ` +
+          `Results are under Data & Analysis; if a field's column isn't shown, add it with Column chooser → Embedded Data.`,
       );
     } catch (e) {
       setError((e as Error).message);

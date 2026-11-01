@@ -417,3 +417,90 @@ describe("unsaved changes", () => {
     expect(hasUnsavedChanges(renamed)).toBe(true);
   });
 });
+
+// ─── normalizeConfig: repairs for surveys saved by older versions ─────────────
+
+describe("normalizeConfig repairs older saves", () => {
+  function olderSave(): GridConfig {
+    const base = makeBaseConfig();
+    return {
+      ...base,
+      layout: {
+        ...base.layout,
+        rows: 0,
+        cols: 2.4,
+        barriersCsv: "Wall ",
+        barrierMeta: { "Wall ": { color: "#123456", imageUrl: "" } },
+        blockedCells: { "r1-c1": "Wall " },
+      },
+      survey: {
+        ...base.survey,
+        categoriesCsv: "Friends , Family",
+        categoryMeta: {
+          "Friends ": { color: "#abcdef", imageUrl: "friends.png" },
+          Family: { color: "#111111", imageUrl: "" },
+        },
+      },
+      experimental: {
+        ...base.experimental!,
+        fixedAssignments: { "r1-c2": "Friends " },
+        weightedEntries: [{ category: "Friends ", weight: 2 }],
+        responseLabelsCsv: "Agree , Disagree",
+        responseLabelMeta: { "Agree ": { color: "#00aa00", imageUrl: "" } },
+      },
+    };
+  }
+
+  it("trims label names and keeps their colour, image, cells and weights", () => {
+    const out = normalizeConfig(olderSave());
+    expect(out.survey.categoriesCsv).toBe("Friends, Family");
+    expect(out.survey.categoryMeta.Friends).toEqual({ color: "#abcdef", imageUrl: "friends.png" });
+    expect(out.survey.categoryMeta["Friends "]).toBeUndefined();
+    expect(out.layout.barriersCsv).toBe("Wall");
+    expect(out.layout.barrierMeta.Wall.color).toBe("#123456");
+    expect(out.layout.blockedCells).toEqual({ "r1-c1": "Wall" });
+    expect(out.experimental!.fixedAssignments).toEqual({ "r1-c2": "Friends" });
+    expect(out.experimental!.weightedEntries).toEqual([{ category: "Friends", weight: 2 }]);
+    expect(out.experimental!.responseLabelsCsv).toBe("Agree, Disagree");
+    expect(out.experimental!.responseLabelMeta.Agree.color).toBe("#00aa00");
+  });
+
+  it("keeps the trimmed label's cells through the next edit of the list", () => {
+    const state = editorReducer(makeState(normalizeConfig(olderSave())), {
+      type: "updateSurvey",
+      patch: { categoriesCsv: "Friends, Family, Neighbors" },
+    });
+    expect(state.config.experimental!.fixedAssignments).toEqual({ "r1-c2": "Friends" });
+    expect(state.config.experimental!.weightedEntries).toEqual([{ category: "Friends", weight: 2 }]);
+  });
+
+  it("drops a label that becomes a copy of an earlier one once trimmed", () => {
+    const base = makeBaseConfig();
+    const out = normalizeConfig({
+      ...base,
+      survey: {
+        ...base.survey,
+        categoriesCsv: "Friends, Friends ",
+        categoryMeta: {
+          Friends: { color: "#abcdef", imageUrl: "" },
+          "Friends ": { color: "#222222", imageUrl: "" },
+        },
+      },
+    });
+    expect(out.survey.categoriesCsv).toBe("Friends");
+    expect(out.survey.categoryMeta).toEqual({ Friends: { color: "#abcdef", imageUrl: "" } });
+  });
+
+  it("repairs a grid size of 0, a negative number or a decimal", () => {
+    const out = normalizeConfig(olderSave());
+    expect(out.layout.rows).toBe(1);
+    expect(out.layout.cols).toBe(2);
+  });
+
+  it("changes nothing in a survey that needs no repair", () => {
+    const once = normalizeConfig(makeBaseConfig());
+    expect(normalizeConfig(once)).toEqual(once);
+    expect(once.layout.rows).toBe(2);
+    expect(once.survey.categoriesCsv).toBe("A, B");
+  });
+});

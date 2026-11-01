@@ -95,7 +95,7 @@ manual setup in Qualtrics.
 3. Click **Export to Qualtrics**, then **Download .qsf**. (On the *My Surveys*
    page you can select multiple saved surveys and export them all into one
    `.qsf`, one grid per page.)
-4. In Qualtrics, click **Create project → Survey → Get started**, choose
+4. In Qualtrics, click **Create a new project → Survey → Get started**, choose
    **"Import a QSF file"**, select the downloaded `.qsf`, and click
    **Create project**.
 5. **Publish.** The grid renders and saves responses automatically into the
@@ -104,14 +104,19 @@ manual setup in Qualtrics.
    in experimental mode. In a multi-question survey each grid gets its own
    fields, named after its data field: `GridAssignments_<name>`, or
    `GridPrefills_<name>` and `GridResponses_<name>`. The multi-question page
-   shows each grid's exact field names.
+   shows each grid's exact field names. If a field's column isn't shown in
+   **Data & Analysis**, add it with **Column chooser → Embedded Data**; data
+   downloads always include it.
 
 ### Manual fallback
 
 To paste into an existing survey instead, use **Copy code** in the export
 dialog: add an Embedded Data element with the listed field(s) to your Survey
-Flow, add a Text/Graphic question, and paste the script into its JavaScript
-editor.
+Flow, add a Text/Graphic question on its own page, and paste the script into
+its JavaScript editor. Unless the grid allows empty cells, it hides Qualtrics'
+Next button on its page and moves on with its own Next. Each grid in a survey
+needs its own fields: to put several grids in one survey, combine them on the
+multi-question page, which names each grid's fields.
 
 ## Deployment
 

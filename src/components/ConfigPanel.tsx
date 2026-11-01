@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { GRID_SIZE_MESSAGE, parseGridSize } from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
 import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
@@ -253,22 +254,22 @@ const QuestionGridForm: React.FC = () => {
   const update = (patch: Partial<typeof layout>) =>
     dispatch({ type: "updateLayout", patch });
 
+  // Only a whole number from 1 to 10 changes the grid; anything else shows a
+  // note, and leaving the box puts back the last good size.
   const handleRows = (e: React.ChangeEvent<HTMLInputElement>) => {
     setRowsInput(e.target.value);
-    const v = Number(e.target.value);
     if (e.target.value === "") return;
-    if (v > 10) { setRowsWarn(true); return; }
-    setRowsWarn(false);
-    update({ rows: v });
+    const v = parseGridSize(e.target.value);
+    setRowsWarn(v === null);
+    if (v !== null) update({ rows: v });
   };
 
   const handleCols = (e: React.ChangeEvent<HTMLInputElement>) => {
     setColsInput(e.target.value);
-    const v = Number(e.target.value);
     if (e.target.value === "") return;
-    if (v > 10) { setColsWarn(true); return; }
-    setColsWarn(false);
-    update({ cols: v });
+    const v = parseGridSize(e.target.value);
+    setColsWarn(v === null);
+    if (v !== null) update({ cols: v });
   };
 
   const inputCls =
@@ -297,6 +298,7 @@ const QuestionGridForm: React.FC = () => {
               type="number"
               min={1}
               max={10}
+              step={1}
               className={inputCls}
               value={rowsInput}
               onChange={handleRows}
@@ -308,7 +310,7 @@ const QuestionGridForm: React.FC = () => {
               }}
             />
           </label>
-          {rowsWarn && <p className="mt-0.5 text-xs text-red-500">Maximum is 10</p>}
+          {rowsWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{GRID_SIZE_MESSAGE}</p>}
         </div>
         <div>
           <label className="flex flex-col gap-1">
@@ -319,6 +321,7 @@ const QuestionGridForm: React.FC = () => {
               type="number"
               min={1}
               max={10}
+              step={1}
               className={inputCls}
               value={colsInput}
               onChange={handleCols}
@@ -330,7 +333,7 @@ const QuestionGridForm: React.FC = () => {
               }}
             />
           </label>
-          {colsWarn && <p className="mt-0.5 text-xs text-red-500">Maximum is 10</p>}
+          {colsWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{GRID_SIZE_MESSAGE}</p>}
         </div>
       </div>
 

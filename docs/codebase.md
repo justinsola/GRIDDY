@@ -149,15 +149,20 @@ Combine page.
 
 Tests sit next to the code as `*.test.ts(x)`:
 
-- `EditorContext.test.ts`: reducer, CSV/meta syncing, renames.
-- `lib/surveysApi.test.ts`: localStorage save/import/dedupe.
+- `EditorContext.test.ts`: reducer, CSV/meta syncing, renames, unsaved-edit
+  detection, repairs of older saves.
+- `lib/surveysApi.test.ts`: fingerprints, importing backups (newer copy kept),
+  full storage.
 - `lib/qualtricsExport.test.ts`: snippet and `.qsf` generation.
-- `components/PreviewPanel.test.tsx`: preview rendering.
+- `lib/respondentExperience.test.ts`: runs the exported script in a fake
+  Qualtrics page: scroll cues, the empty-cell reminder, restoring answers,
+  touch and keyboard input.
+- `lib/combineFields.test.ts`, `lib/imageInput.test.ts`, `lib/gridSize.test.ts`:
+  small helpers.
+- `components/PreviewPanel.test.tsx`, `components/ConfigPanel.test.tsx`,
+  `components/CategoryChips.test.tsx`: editor and preview behaviour.
 
 ## History notes
 
 - Sign-in and Supabase cloud sync were **removed on 2026-08-14**. The
-  [`CLAUDE.md`](../CLAUDE.md) file explains how to bring them back. `.mcp.json`
-  still points at the old Supabase project.
-- `package.json` still says `"name": "photobooth"` (from the starter template).
-  It's harmless.
+  [`CLAUDE.md`](../CLAUDE.md) file explains how to bring them back.

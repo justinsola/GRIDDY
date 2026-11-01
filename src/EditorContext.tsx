@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { repairGridSize } from "./lib/gridSize";
 import {
   CategoryMeta,
   ExperimentalConfig,
@@ -135,36 +136,82 @@ export function syncCategoryMeta(
   return next;
 }
 
+/** Label names with a space at either end, as older versions could save them,
+ * become their trimmed name: the previews, painting and the export all look
+ * labels up by the trimmed name, so the untrimmed one lost its colour and
+ * image, and its cells were dropped on the next edit. The colour and image
+ * move to the trimmed name; a name that becomes a copy of an earlier one is
+ * dropped. Cheap, and returns its inputs when nothing needs trimming. */
+export function trimLabelNames(
+  csv: string,
+  meta: Record<string, CategoryMeta>,
+): { csv: string; meta: Record<string, CategoryMeta> } {
+  const names = splitCsvPreservingBlanks(csv);
+  if (names.every((name) => name === name.trim())) return { csv, meta };
+  const kept: string[] = [];
+  const nextMeta: Record<string, CategoryMeta> = {};
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (trimmed !== "" && kept.includes(trimmed)) continue;
+    kept.push(trimmed);
+    const entry = meta[name] ?? meta[trimmed];
+    if (entry && !nextMeta[trimmed]) nextMeta[trimmed] = entry;
+  }
+  return { csv: encodeNamesCsv(kept), meta: nextMeta };
+}
+
+function trimValues(map: Record<string, string>): Record<string, string> {
+  if (Object.values(map).every((v) => typeof v !== "string" || v === v.trim())) return map;
+  return Object.fromEntries(
+    Object.entries(map).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]),
+  );
+}
+
 export function normalizeConfig(config: GridConfig): GridConfig {
-  const categoriesCsv = config.survey.categoriesCsv ?? "";
   const existingExp: Partial<ExperimentalConfig> = config.experimental ?? {};
-  const barriersCsv = config.layout.barriersCsv ?? "";
+  const categories = trimLabelNames(
+    config.survey.categoriesCsv ?? "",
+    config.survey.categoryMeta ?? {},
+  );
+  const barriers = trimLabelNames(
+    config.layout.barriersCsv ?? "",
+    config.layout.barrierMeta ?? {},
+  );
+  const responseLabels = trimLabelNames(
+    existingExp.responseLabelsCsv ?? DEFAULT_RESPONSE_LABELS,
+    existingExp.responseLabelMeta ?? {},
+  );
+  const weightedEntries = existingExp.weightedEntries ?? [];
   return {
     ...config,
     layout: {
       ...config.layout,
-      barriersCsv,
-      barrierMeta: syncCategoryMeta(barriersCsv, config.layout.barrierMeta ?? {}),
-      blockedCells: config.layout.blockedCells ?? {},
+      rows: repairGridSize(config.layout.rows, 3),
+      cols: repairGridSize(config.layout.cols, 3),
+      barriersCsv: barriers.csv,
+      barrierMeta: syncCategoryMeta(barriers.csv, barriers.meta),
+      blockedCells: trimValues(config.layout.blockedCells ?? {}),
     },
     survey: {
       ...config.survey,
+      categoriesCsv: categories.csv,
       selectionMode: config.survey.selectionMode ?? "paint",
       skipBehavior: config.survey.skipBehavior ?? "remind",
-      categoryMeta: syncCategoryMeta(
-        categoriesCsv,
-        config.survey.categoryMeta ?? {},
-      ),
+      categoryMeta: syncCategoryMeta(categories.csv, categories.meta),
     },
     experimental: {
       ...defaultExperimental(),
       ...existingExp,
-      fixedAssignments: existingExp.fixedAssignments ?? {},
-      weightedEntries: existingExp.weightedEntries ?? [],
-      responseLabelMeta: syncResponseLabelMeta(
-        existingExp.responseLabelsCsv ?? "",
-        existingExp.responseLabelMeta ?? {},
-      ),
+      fixedAssignments: trimValues(existingExp.fixedAssignments ?? {}),
+      weightedEntries: weightedEntries.every(
+        (e) => typeof e.category !== "string" || e.category === e.category.trim(),
+      )
+        ? weightedEntries
+        : weightedEntries.map((e) =>
+            typeof e.category === "string" ? { ...e, category: e.category.trim() } : e,
+          ),
+      responseLabelsCsv: responseLabels.csv,
+      responseLabelMeta: syncResponseLabelMeta(responseLabels.csv, responseLabels.meta),
     },
   };
 }

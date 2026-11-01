@@ -92,6 +92,10 @@ the **JS** marker that means JavaScript is attached, and **Survey flow**
 exact message in the findings log; the validator's output tells you whether
 the file was already wrong before Qualtrics saw it.
 
+Compare the buttons you clicked with the steps in GRIDDY's export dialog, the
+notice on the multi-question page and the README. Qualtrics renames buttons
+from time to time; when they differ, update all three.
+
 ## Part D: preview in Qualtrics
 
 1. Click **Preview** at the top right of the builder and preview the survey.

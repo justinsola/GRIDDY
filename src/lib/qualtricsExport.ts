@@ -1886,7 +1886,7 @@ Qualtrics.SurveyEngine.addOnUnload(function()
  * QSF (Qualtrics Survey Format) export
  *
  * A .qsf file is a JSON document Qualtrics can import directly via
- * Projects -> Create project -> Survey -> "From a file". Importing it
+ * Create a new project -> Survey -> Get started -> "Import a QSF file". Importing it
  * builds the whole survey for the researcher: one Text/Graphic question
  * per grid (with the rendering JavaScript already attached), every
  * embedded-data field pre-declared in the Survey Flow, and each grid on

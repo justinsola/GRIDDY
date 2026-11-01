@@ -1061,7 +1061,7 @@ export const PreviewPanel: React.FC = () => {
                       window).
                     </li>
                     <li>
-                      In Qualtrics, click <strong>Create project</strong>,
+                      In Qualtrics, click <strong>Create a new project</strong>,
                       choose <strong>Survey</strong>, then{" "}
                       <strong>Get started</strong>.
                     </li>
@@ -1112,7 +1112,10 @@ export const PreviewPanel: React.FC = () => {
                     </ul>
                     <p className="mt-1.5 text-emerald-700">
                       Find them under <strong>Data &amp; Analysis</strong> after
-                      collecting responses.
+                      collecting responses. If a field&apos;s column isn&apos;t
+                      shown there, add it with <strong>Column chooser</strong>{" "}
+                      &rarr; <strong>Embedded Data</strong>; data downloads
+                      always include it.
                     </p>
                     <p className="mt-1.5 text-emerald-700">
                       Putting more than one grid in the same Qualtrics survey?
@@ -1143,8 +1146,10 @@ export const PreviewPanel: React.FC = () => {
                             </code>
                           </span>
                         ))}
-                        , add a Text/Graphic question, and paste this into its{" "}
-                        <strong>JavaScript</strong> editor.
+                        , add a Text/Graphic question on its own page, and paste
+                        this into its <strong>JavaScript</strong> editor. Unless
+                        empty cells are allowed, the grid hides Qualtrics&apos;
+                        Next button on that page and moves on with its own.
                       </p>
                       <button
                         type="button"

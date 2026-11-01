@@ -24,7 +24,7 @@ changes; it is the one place that says where the project stands._
 ## What the app does today
 
 - **Editor** (`/`): question text, rows and columns (max 10 each), optional centre cell with its own label, background image URL, barriers (blocked cells with their own colour or image), categories as a comma-separated list with per-category colour, image and layer mode.
-- **Respondent input**: paint (click a category, then cells), dropdown per cell, or drag and drop. Interaction can be turned off for a static display.
+- **Respondent input**: paint (click a category, then cells), dropdown per cell, or drag and drop. The export also supports a look-only grid (`allowInteraction: false`), but the editor has no control for it yet.
 - **Experimental mode**: the grid is pre-filled (fixed, shuffled or weighted) and respondents react with response labels; answers go to `GridPrefills` and `GridResponses` instead of `GridAssignments`.
 - **Respondent preview**: runs the real exported script inside the app.
 - **My Surveys** (`/history`): surveys saved in `localStorage` (`griddy.localSurveys.v1`), JSON backup and restore, multi-select `.qsf` export.
