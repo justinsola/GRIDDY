@@ -48,6 +48,14 @@ function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfI
   };
 }
 
+/** A grid's field label until the researcher types one: the field name
+ * ending set in its export dialog, so both ways of exporting it agree, or
+ * else the survey's name. */
+function defaultFieldLabel(survey: ExportedSurvey): string {
+  const ending = survey.config.survey.fieldSuffix?.trim() ?? "";
+  return /[A-Za-z0-9]/.test(ending) ? ending : survey.name ?? "";
+}
+
 /** The embedded-data field name(s) a question's answers are saved under. */
 function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
   const item = buildQsfItem(survey, fieldLabel);
@@ -122,7 +130,7 @@ export default function CombineSurveysPage() {
   const qsfItems = useMemo(
     () =>
       ordered.map((survey) =>
-        buildQsfItem(survey, fieldOverrides[survey.id] ?? survey.name ?? ""),
+        buildQsfItem(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey)),
       ),
     [ordered, fieldOverrides],
   );
@@ -311,7 +319,7 @@ export default function CombineSurveysPage() {
                       </span>
                       <span className="break-all font-mono text-[10.5px] text-ink-faint">
                         Saved in Qualtrics as{" "}
-                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? survey.name ?? "")}
+                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey))}
                       </span>
                     </span>
                   </div>
@@ -321,7 +329,7 @@ export default function CombineSurveysPage() {
                       Data field
                       <input
                         type="text"
-                        value={fieldOverrides[survey.id] ?? survey.name ?? ""}
+                        value={fieldOverrides[survey.id] ?? defaultFieldLabel(survey)}
                         onChange={(e) =>
                           setFieldOverrides((prev) => ({
                             ...prev,

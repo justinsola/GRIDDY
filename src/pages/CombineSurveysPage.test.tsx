@@ -147,3 +147,17 @@ it("can use the saved version instead, leaving the editor's changes out", async 
   expect(qsf).toContain("Saved question");
   expect(qsf).not.toContain("Edited question");
 });
+
+it("names a grid's fields after the field name ending set in its export dialog", async () => {
+  act(() => root.render(page(false)));
+  editConfig({ name: "Map" });
+  act(() =>
+    editor.dispatch({ type: "updateSurvey", patch: { fieldSuffix: "Q2" } }),
+  );
+  await saveSurvey(editor.state.config);
+  act(() => editor.dispatch({ type: "markSaved" }));
+  await act(async () => root.render(page(true)));
+  act(() => button("+ Add").click());
+  expect(host.textContent).toContain("GridAssignments_Q2");
+  expect(await downloadQsf()).toContain('"Field": "GridAssignments_Q2"');
+});
