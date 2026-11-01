@@ -48,11 +48,12 @@ changes; it is the one place that says where the project stands._
 | Host on GitHub Pages at www.jlsola.com/GRIDDY instead of Vercel; repository renamed to `GRIDDY` | PR 14, PR 15, rename on 31 October |
 | GRIDDY tab on the personal site | `justinsola.github.io` commit 8bb973b |
 | Repository description, topics, homepage, Issues on | 31 October |
+| The exported grid keeps its designed size on every screen; overflow scrolls with clear cues and empty cells get a reminder by default | Decided 1 November 2026 |
 | Delete merged branches, protect `main` | Declined for now |
 
 ## Known gaps
 
-- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run for the first time on 1 November 2026 and works for the standard and experimental designs. `docs/testing-in-qualtrics.md` is the process; its "Open defects" section lists what the runs found, currently: the grid overflows on phones, reactions can land on empty cells in experimental mode, and the export dialog ignores Escape.
+- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run for the first time on 1 November 2026 and works for the standard and experimental designs. `docs/testing-in-qualtrics.md` is the process; its "Open defects" section lists what the runs found, currently: no cue that part of the grid is off-screen on a phone and no reminder about empty cells, reactions landing on empty cells in experimental mode, the export dialog ignoring Escape, and the design preview's "Block cells" mode staying on.
 - Tests are unit tests only (export builders, reducer, storage, preview panel). Nothing drives the real UI automatically.
 - The app page has no `description` or social-preview meta tags.
 - Page 7 of the documentation PDF is half blank (cosmetic).
