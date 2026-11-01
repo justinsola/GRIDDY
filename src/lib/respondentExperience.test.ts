@@ -296,6 +296,49 @@ describe("dropdown cells", () => {
   });
 });
 
+describe("layer mode for category images", () => {
+  function painted(layerMode: "front" | "behind" | "replace"): HTMLElement {
+    const r = run(
+      withSurvey({
+        categoryMeta: {
+          Family: { color: "#f87171", imageUrl: "data:image/png;base64,AAAA", layerMode },
+        },
+      }),
+    );
+    cells(r.container)[0].click(); // paints Family, the active category
+    return cells(r.container)[0];
+  }
+
+  it("lays the image over the whole cell for Front", () => {
+    const cell = painted("front");
+    const img = cell.querySelector("img")!;
+    expect(img.style.position).toBe("absolute");
+    expect(img.style.opacity).toBe("");
+    expect(cell.style.backgroundColor).toBe("transparent");
+  });
+
+  it("shows a faint image under the name for Behind", () => {
+    const img = painted("behind").querySelector("img")!;
+    expect(img.style.position).toBe("absolute");
+    expect(img.style.opacity).toBe("0.2");
+  });
+
+  it("keeps the image above the name for Replace", () => {
+    const img = painted("replace").querySelector("img")!;
+    expect(img.style.position).toBe("");
+  });
+
+  it("applies the layer mode to pre-filled cells in an experiment", () => {
+    const base = withSurvey({
+      categoryMeta: {
+        Family: { color: "#f87171", imageUrl: "data:image/png;base64,AAAA", layerMode: "behind" },
+      },
+    });
+    const img = cells(run(experimental({}, base)).container)[0].querySelector("img")!;
+    expect(img.style.opacity).toBe("0.2");
+  });
+});
+
 describe("drag and drop", () => {
   it("ignores dropped text that is not one of the grid's labels", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));

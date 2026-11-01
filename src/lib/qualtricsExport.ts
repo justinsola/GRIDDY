@@ -357,7 +357,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		topDiv.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
 		topDiv.style.borderBottom = catColor ? ("1px solid " + hexToRgba(catColor, 0.4)) : "1px solid #e2dccf";
 
-		if (catName) {
+		if (catName && catImage && (meta.layerMode === "front" || meta.layerMode === "behind")) {
+			appendCategoryContent(topDiv, catName, catColor || "#60a5fa", catImage, meta.layerMode, true);
+			if (meta.layerMode === "front") topDiv.style.backgroundColor = "transparent";
+		} else if (catName) {
 			if (catImage) {
 				var imgWrap = document.createElement("div");
 				imgWrap.style.flex = "1";
@@ -417,6 +420,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 		cellRef.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
 		cellRef.style.borderColor = catColor || "#e2dccf";
+		if (catName && catImage && meta.layerMode === "front") {
+			cellRef.style.backgroundColor = "transparent";
+			cellRef.style.borderColor = hexToRgba(catColor || "#60a5fa", 0.5);
+		}
 		cellRef.appendChild(topDiv);
 
 		// Bottom portion: how the respondent reacts depends on selectionMode.
@@ -536,6 +543,57 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 	}
 
+	// Draw a category's image and name into a container using the layer mode
+	// chosen in the editor, by the same rules as its design preview: "front"
+	// lays the image over the whole cell with the name on a coloured strip,
+	// "behind" shows a faint image under the name. Returns true for "front",
+	// false for "behind", and null for "replace" (or no image), which the
+	// caller draws itself.
+	function appendCategoryContent(parent, catName, catColor, catImage, layerMode, textAtTop) {
+		if (!catImage || (layerMode !== "front" && layerMode !== "behind")) return null;
+		parent.style.position = "relative";
+		var layered = document.createElement("img");
+		layered.src = catImage;
+		layered.alt = catName;
+		layered.style.position = "absolute";
+		layered.style.top = "0";
+		layered.style.left = "0";
+		layered.style.width = "100%";
+		layered.style.height = "100%";
+		layered.style.objectFit = "contain";
+		if (layerMode === "behind") layered.style.opacity = "0.2";
+		parent.appendChild(layered);
+		var name = document.createElement("div");
+		name.textContent = catName;
+		name.style.textAlign = "center";
+		name.style.lineHeight = "1.2";
+		if (layerMode === "front") {
+			name.style.position = "absolute";
+			name.style.left = "0";
+			name.style.right = "0";
+			name.style[textAtTop ? "top" : "bottom"] = "0";
+			name.style.padding = textAtTop ? "2px 2px 0" : "0 2px 2px";
+			name.style.fontSize = "8px";
+			name.style.fontWeight = "500";
+			name.style.whiteSpace = "nowrap";
+			name.style.overflow = "hidden";
+			name.style.textOverflow = "ellipsis";
+			name.style.backgroundColor = hexToRgba(catColor, 0.75);
+			name.style.color = "#0f172a";
+		} else {
+			name.style.position = "relative";
+			name.style.zIndex = "1";
+			name.style.flex = "1";
+			name.style.display = "flex";
+			name.style.alignItems = "center";
+			name.style.justifyContent = "center";
+			name.style.padding = "4px";
+			name.style.fontSize = "10px";
+		}
+		parent.appendChild(name);
+		return layerMode === "front";
+	}
+
 	function resetCellBaseStyles(cellRef, isCenterCell) {
 		cellRef.style.display = "flex";
 		cellRef.style.flexDirection = "column";
@@ -547,11 +605,19 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		cellRef.style.color = "#2a241c";
 	}
 
-	function renderCellContent(cellRef, catName, catColor, catImage) {
+	function renderCellContent(cellRef, catName, catColor, catImage, layerMode) {
 		cellRef.innerHTML = "";
 		resetCellBaseStyles(cellRef, false);
 		cellRef.style.backgroundColor = hexToRgba(catColor, 0.2);
 		cellRef.style.borderColor = catColor;
+		var layered = appendCategoryContent(cellRef, catName, catColor, catImage, layerMode, false);
+		if (layered !== null) {
+			if (layered) {
+				cellRef.style.backgroundColor = "transparent";
+				cellRef.style.borderColor = hexToRgba(catColor, 0.5);
+			}
+			return;
+		}
 
 		if (catImage) {
 			var imgWrap = document.createElement("div");
@@ -621,39 +687,53 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			cellRef.style.backgroundColor = hexToRgba(assignedColor, 0.2);
 			cellRef.style.borderColor = assignedColor;
 
-			// Show the category's image above its name, as the editor's design
-			// preview does.
-			if (meta.imageUrl) {
-				var assignedImgWrap = document.createElement("div");
-				assignedImgWrap.style.flex = "1";
-				assignedImgWrap.style.minHeight = "0";
-				assignedImgWrap.style.display = "flex";
-				assignedImgWrap.style.alignItems = "center";
-				assignedImgWrap.style.justifyContent = "center";
-				assignedImgWrap.style.overflow = "hidden";
-				var assignedImg = document.createElement("img");
-				assignedImg.src = meta.imageUrl;
-				assignedImg.alt = assigned;
-				assignedImg.style.maxWidth = "100%";
-				assignedImg.style.maxHeight = "100%";
-				assignedImg.style.objectFit = "contain";
-				assignedImgWrap.appendChild(assignedImg);
-				cellRef.appendChild(assignedImgWrap);
+			// The chosen category, drawn the way the editor's design preview
+			// draws it (image, name and layer mode), above the dropdown.
+			var assignedBox = document.createElement("div");
+			assignedBox.style.flex = "1";
+			assignedBox.style.minHeight = "0";
+			assignedBox.style.display = "flex";
+			assignedBox.style.flexDirection = "column";
+			assignedBox.style.overflow = "hidden";
+			cellRef.appendChild(assignedBox);
+			var assignedLayered = appendCategoryContent(assignedBox, assigned, assignedColor, meta.imageUrl || "", meta.layerMode, false);
+			if (assignedLayered) {
+				cellRef.style.backgroundColor = "transparent";
+				cellRef.style.borderColor = hexToRgba(assignedColor, 0.5);
 			}
+			if (assignedLayered === null) {
+				if (meta.imageUrl) {
+					var assignedImgWrap = document.createElement("div");
+					assignedImgWrap.style.flex = "1";
+					assignedImgWrap.style.minHeight = "0";
+					assignedImgWrap.style.display = "flex";
+					assignedImgWrap.style.alignItems = "center";
+					assignedImgWrap.style.justifyContent = "center";
+					assignedImgWrap.style.overflow = "hidden";
+					var assignedImg = document.createElement("img");
+					assignedImg.src = meta.imageUrl;
+					assignedImg.alt = assigned;
+					assignedImg.style.maxWidth = "100%";
+					assignedImg.style.maxHeight = "100%";
+					assignedImg.style.objectFit = "contain";
+					assignedImgWrap.appendChild(assignedImg);
+					assignedBox.appendChild(assignedImgWrap);
+				}
 
-			var assignedLabel = document.createElement("div");
-			assignedLabel.style.flex = meta.imageUrl ? "0 0 auto" : "1";
-			assignedLabel.style.minHeight = "0";
-			assignedLabel.style.display = "flex";
-			assignedLabel.style.alignItems = "center";
-			assignedLabel.style.justifyContent = "center";
-			assignedLabel.style.overflow = "hidden";
-			assignedLabel.style.textAlign = "center";
-			assignedLabel.style.fontSize = "10px";
-			assignedLabel.style.fontWeight = "500";
-			assignedLabel.style.lineHeight = "1.2";
-			assignedLabel.textContent = assigned;
-			cellRef.appendChild(assignedLabel);
+				var assignedLabel = document.createElement("div");
+				assignedLabel.style.flex = meta.imageUrl ? "0 0 auto" : "1";
+				assignedLabel.style.minHeight = "0";
+				assignedLabel.style.display = "flex";
+				assignedLabel.style.alignItems = "center";
+				assignedLabel.style.justifyContent = "center";
+				assignedLabel.style.overflow = "hidden";
+				assignedLabel.style.textAlign = "center";
+				assignedLabel.style.fontSize = "10px";
+				assignedLabel.style.fontWeight = "500";
+				assignedLabel.style.lineHeight = "1.2";
+				assignedLabel.textContent = assigned;
+				assignedBox.appendChild(assignedLabel);
+			}
 		}
 
 		var select = document.createElement("select");
@@ -720,7 +800,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var assigned = assignments[key];
 		if (assigned) {
 			var meta = getCategoryMeta(assigned);
-			renderCellContent(cellRef, assigned, meta.color || "#60a5fa", meta.imageUrl || "");
+			renderCellContent(cellRef, assigned, meta.color || "#60a5fa", meta.imageUrl || "", meta.layerMode);
 			return;
 		}
 
