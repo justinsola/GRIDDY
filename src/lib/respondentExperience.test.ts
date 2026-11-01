@@ -643,6 +643,11 @@ describe("going back to the grid, or resuming later", () => {
     const copy = run(makeConfig(), {}, "", { page, questionId: "QID2" });
     expect(cells(copy.container)[0].textContent).not.toContain("Family");
     expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    // Leaving the copy untouched keeps the first question's answers.
+    button(copy.container, "Next").click();
+    button(copy.container, "Continue anyway").click();
+    expect(page.nextClicks).toBe(1);
+    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
     copy.container.remove();
     // Going back to the first question shows its answers again.
     const back = run(makeConfig(), {}, "", { page, questionId: "QID1" });

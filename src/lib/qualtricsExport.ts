@@ -2062,7 +2062,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		controls: controls,
 		reminder: reminder,
 		isShown: isDisplayed,
-		persist: persistAll,
+		// Next records each grid's latest answers, except a grid that has not
+		// been answered while another question's answers fill its fields.
+		persist: function () {
+			if (!fieldsOwnedElsewhere()) persistAll();
+		},
 		showReminder: showReminder,
 		checks: function () {
 			return skipBehavior !== "allow" && fillableKeys().length > 0 && isDisplayed();

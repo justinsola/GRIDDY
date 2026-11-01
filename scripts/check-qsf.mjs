@@ -212,9 +212,14 @@ questions.forEach((q, index) => {
   if (parsed.kind === "single") {
     const start = js.indexOf("function persistAll()");
     const fn = start >= 0 ? js.slice(start, js.indexOf("\n\t}", start) + 3) : "";
-    const [experimentalBranch, standardBranch = ""] = fn.split("} else {");
-    const live = parsed.configs[0]?.experimental?.enabled ? literals(experimentalBranch) : literals(standardBranch);
-    if (live.length === 0) fail(`${label}: could not find the setEmbeddedData call that saves the answers`);
+    // Branches: experimental, then standard; a look-only grid writes nothing.
+    const [experimentalBranch, standardBranch = ""] = fn.split("} else");
+    const first = parsed.configs[0] ?? {};
+    const lookOnly =
+      !first.experimental?.enabled && !(first.survey?.allowInteraction && csv(first.survey?.categoriesCsv).length > 0);
+    const live = first.experimental?.enabled ? literals(experimentalBranch) : lookOnly ? [] : literals(standardBranch);
+    if (lookOnly) console.log(`      ${label}: look-only grid, records nothing`);
+    else if (live.length === 0) fail(`${label}: could not find the setEmbeddedData call that saves the answers`);
     for (const field of live) usedFields.push({ q: n, field });
   } else {
     for (const step of parsed.configs) if (step.embeddedDataField) usedFields.push({ q: n, field: step.embeddedDataField });
