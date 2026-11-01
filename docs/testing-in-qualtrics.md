@@ -103,8 +103,10 @@ the file was already wrong before Qualtrics saw it.
    change exactly that cell.
 4. Open the browser console (F12). Nothing from the grid script should be
    logged as an error.
-5. Switch the preview to the mobile view and check that the grid still fits
-   and cells can still be painted.
+5. Switch the preview to the mobile view. The grid must keep its designed
+   size: cells, text and pictures the same as on desktop, never shrunk to
+   fit. Check that the columns beyond the screen can be reached by scrolling
+   sideways, and note whether anything tells the respondent they are there.
 6. Click the grid's own **Next** button (the red one under the grid), then
    finish the survey.
 
@@ -172,15 +174,20 @@ locally, and reports what differed. Learned on the first runs:
 Found by this process and not yet fixed. Remove an entry when its fix is on
 `main` and a re-run confirms it.
 
-1. **The grid overflows on phones.** The exported script gives the grid
-   wrapper a fixed size, `previewWidth` by `previewHeight` pixels (550 by
-   550 by default; `src/lib/qualtricsExport.ts` near line 1002 and again
-   near line 1904 in the multi-step script), so on a phone the box is wider
-   than the question and Qualtrics' mobile view cuts off the right-hand
-   columns. The columns themselves are already flexible (`minmax(0, 1fr)`).
-   Fix: cap the wrapper at the container (`max-width: 100%`) and derive its
-   height from the aspect ratio instead of a fixed pixel height, and mirror
-   the change in `PreviewPanel.tsx` so the preview matches. Found by run 1.
+1. **On a phone, part of the grid is off-screen with no cue, and nothing
+   warns about empty cells.** The grid keeps the size the researcher
+   designed on every screen. That is a design decision: cells, fonts and
+   pictures are never shrunk to fit a screen. So on a phone a 550 px grid
+   meets about 340 px of question area. A recheck showed that Qualtrics'
+   question box already scrolls sideways (`.QuestionOuter` has
+   `overflow-x: auto`), so nothing is lost. But nothing tells respondents
+   that more of the grid is there, phones hide scrollbars until you scroll,
+   and Next submits whatever was filled. Fix: scroll the grid inside its own
+   frame with a hint and arrows at the edges, and by default remind
+   respondents about empty cells when they press Next, including how many
+   are off-screen, with options to allow empty cells or require every cell.
+   Do not fix this by shrinking the grid. Found by run 1 and reframed after
+   the recheck.
 2. **Reactions can be placed on empty cells in experimental mode.** The
    reaction handlers only skip the centre cell and blocked cells
    (`src/lib/qualtricsExport.ts` near lines 1101, 1130 and 493), so a
@@ -190,10 +197,16 @@ Found by this process and not yet fixed. Remove an entry when its fix is on
    all three input modes. Found by run 2.
 3. **The export dialog does not close on Escape**, only on its Close button
    (minor). Found by run 1.
+4. **"Block cells" stays on after a category is picked.** In the design
+   preview of an experiment, picking a category chip while blocking cells
+   leaves blocking on, so the next clicks block cells instead of pre-filling
+   them. The researcher has to notice and press "Done blocking". Found by
+   run 2.
 
 ## Findings log
 
 | Date | Parts run | Result | Notes |
 | --- | --- | --- | --- |
 | 2026-11-01 | A to E, standard design | Pass, 1 defect | Built, saved and exported in the live app; validator 25 checks clean. Imported into Qualtrics (project `E2E test 2026-11-01`, survey SV_bK09zSoXw1K73LM) with the JS marker and the Survey Flow field in place. Desktop preview matched GRIDDY's preview; painting, clearing and the inert centre cell behaved; no console errors; the grid's Next button finished the survey. Recorded `GridAssignments` was exactly `{"r1-c1":"Family","r3-c4":"Mom's friends"}`. Mobile view cut off columns 3 and 4 (defect 1). CSV export not tried. |
+| 2026-11-01 | D, phone view of the standard design again | Recheck | The grid kept its designed 550 px width. Qualtrics' `.QuestionOuter` box is 339 px wide with `overflow-x: auto` and a scroll width of 565 px, so the right-hand columns can be reached by scrolling sideways, but nothing shows that they exist. Defect 1 rewritten accordingly. |
 | 2026-11-01 | A to E, experiment variation (fixed prefills on two cells, one barrier, default reaction labels) | Pass, 1 defect | Validator 24 checks clean. Imported as `E2E experimental 2026-11-01` (SV_5o4hWngBmygOPb0); Survey Flow declared both fields. Preview (on Qualtrics' newer "jfe6" preview engine) showed the prefills, the "—" placeholders and the blocked cell; the blocked cell ignored clicks. Recorded `GridPrefills` `{"r1-c1":"Family","r1-c2":"Friends"}` and `GridResponses` `{"r1-c1":"Agree","r1-c2":"Disagree","r1-c3":"Disagree"}`: the last key is defect 2. |
