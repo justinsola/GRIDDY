@@ -5,6 +5,7 @@ import { LayerMode, WeightEntry } from "../grid-types";
 import {
   buildQualtricsSnippet,
   buildQualtricsQsfForConfig,
+  singleGridFieldNames,
 } from "../lib/qualtricsExport";
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -155,6 +156,16 @@ export const PreviewPanel: React.FC = () => {
 
   const [copied, setCopied] = useState(false);
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+
+  // Escape closes the export dialog, like clicking outside it.
+  useEffect(() => {
+    if (!isCodeModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsCodeModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isCodeModalOpen]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [blockEditMode, setBlockEditMode] = useState(false);
   const [activeBarrier, setActiveBarrier] = useState<string | null>(null);
@@ -387,7 +398,11 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  const qualtricsSnippet = useMemo(() => buildQualtricsSnippet(config), [config]);
+  const fieldNames = useMemo(() => singleGridFieldNames(config), [config]);
+  const qualtricsSnippet = useMemo(
+    () => buildQualtricsSnippet(config, fieldNames),
+    [config, fieldNames],
+  );
   const qualtricsQsf = useMemo(
     () => buildQualtricsQsfForConfig(config),
     [config],
@@ -395,9 +410,9 @@ export const PreviewPanel: React.FC = () => {
   const exportFields = useMemo(
     () =>
       expEnabled
-        ? ["GridPrefills", "GridResponses"]
-        : ["GridAssignments"],
-    [expEnabled],
+        ? [fieldNames.prefillsField, fieldNames.responsesField]
+        : [fieldNames.embeddedDataField],
+    [expEnabled, fieldNames],
   );
 
   const handleCopy = async () => {
@@ -494,7 +509,11 @@ export const PreviewPanel: React.FC = () => {
                   <button
                     key={item}
                     type="button"
-                    onClick={() => setActiveCategory(item)}
+                    onClick={() => {
+                      // Picking a category means placing it, so leave block-cells mode.
+                      setActiveCategory(item);
+                      setBlockEditMode(false);
+                    }}
                     className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
                       isActive
                         ? "shadow-sm"
@@ -668,13 +687,20 @@ export const PreviewPanel: React.FC = () => {
               // and bridge the grid gap with box-shadow — shadows paint outside the
               // box and aren't clipped, so this renders identically in Qualtrics.
               const barrierName = layout.blockedCells[cell.exportKey];
-              if (barrierName) {
+              if (barrierName && !cell.isCenter) {
                 const bMeta = layout.barrierMeta?.[barrierName];
                 const bColor = bMeta?.color ?? "#94a3b8";
                 const bImage = bMeta?.imageUrl ?? "";
                 const gap = tuning.gridGap;
                 const radius = 8; // matches rounded-lg
+                const centerRow = layout.centerRow ?? Math.ceil(layout.rows / 2);
+                const centerCol = layout.centerCol ?? Math.ceil(layout.cols / 2);
                 const at = (r: number, c: number) =>
+                  r >= 1 &&
+                  c >= 1 &&
+                  r <= layout.rows &&
+                  c <= layout.cols &&
+                  !(layout.includeCenterCell && r === centerRow && c === centerCol) &&
                   layout.blockedCells[`r${r}-c${c}`] === barrierName;
                 const cUp = at(cell.row - 1, cell.col);
                 const cDown = at(cell.row + 1, cell.col);
@@ -859,7 +885,9 @@ export const PreviewPanel: React.FC = () => {
                               color: "#8a2e3b",
                             }
                           : {
-                              backgroundColor: "#fbf8f1",
+                              backgroundColor: layout.backgroundImageUrl
+                                ? "rgba(251,248,241,0.55)"
+                                : "#fbf8f1",
                               borderStyle: "dashed",
                               borderColor: "#d8cdb8",
                               color: "#2a241c",
@@ -1038,17 +1066,19 @@ export const PreviewPanel: React.FC = () => {
                       window).
                     </li>
                     <li>
-                      In Qualtrics, go to <strong>Projects</strong> &rarr;{" "}
-                      <strong>Create project</strong> &rarr;{" "}
-                      <strong>Survey</strong>.
+                      In Qualtrics, click <strong>Create a new project</strong>,
+                      choose <strong>Survey</strong>, then{" "}
+                      <strong>Get started</strong>.
                     </li>
                     <li>
-                      Choose <strong>“Import a QSF file”</strong>, select the
+                      Name the project. Under{" "}
+                      <strong>“How do you want to start your survey?”</strong>{" "}
+                      choose <strong>“Import a QSF file”</strong>, choose the
                       downloaded{" "}
                       <code className="rounded bg-emerald-100 px-1 font-mono">
                         .qsf
                       </code>
-                      , and create the project.
+                      , and click <strong>Create project</strong>.
                     </li>
                     <li>
                       <strong>Publish</strong>. Then the grid renders and
@@ -1062,14 +1092,14 @@ export const PreviewPanel: React.FC = () => {
                         <>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              GridPrefills
+                              {fieldNames.prefillsField}
                             </code>{" "}
                             — what was shown, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
                           </li>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              GridResponses
+                              {fieldNames.responsesField}
                             </code>{" "}
                             — what the respondent selected, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Good"}`}</code>
@@ -1078,7 +1108,7 @@ export const PreviewPanel: React.FC = () => {
                       ) : (
                         <li>
                           <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                            GridAssignments
+                            {fieldNames.embeddedDataField}
                           </code>{" "}
                           — e.g.{" "}
                           <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
@@ -1087,7 +1117,32 @@ export const PreviewPanel: React.FC = () => {
                     </ul>
                     <p className="mt-1.5 text-emerald-700">
                       Find them under <strong>Data &amp; Analysis</strong> after
-                      collecting responses.
+                      collecting responses. If a field&apos;s column isn&apos;t
+                      shown there, add it with <strong>Column chooser</strong>{" "}
+                      &rarr; <strong>Embedded Data</strong>; data downloads
+                      always include it.
+                    </p>
+                    <label className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="font-medium">Field name ending</span>
+                      <input
+                        type="text"
+                        value={survey.fieldSuffix ?? ""}
+                        onChange={(e) =>
+                          dispatch({ type: "updateSurvey", patch: { fieldSuffix: e.target.value } })
+                        }
+                        placeholder="optional, e.g. Q2"
+                        aria-label="Field name ending"
+                        className="w-40 rounded-md border border-emerald-200 bg-white px-2 py-1 font-mono text-xs text-slate-800 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </label>
+                    <p className="mt-1.5 text-emerald-700">
+                      Putting more than one grid in the same Qualtrics survey?
+                      Give each its own field name ending here, or combine them
+                      on <strong>My surveys</strong> &rarr;{" "}
+                      <strong>Make multi-question survey</strong>. Grids that
+                      share field names overwrite each other&apos;s answers, so
+                      only one set is kept. That includes a grid question
+                      copied in Qualtrics or repeated with Loop &amp; Merge.
                     </p>
                   </div>
                 </section>
@@ -1110,8 +1165,10 @@ export const PreviewPanel: React.FC = () => {
                             </code>
                           </span>
                         ))}
-                        , add a Text/Graphic question, and paste this into its{" "}
-                        <strong>JavaScript</strong> editor.
+                        , add a Text/Graphic question on its own page, and paste
+                        this into its <strong>JavaScript</strong> editor. Unless
+                        empty cells are allowed, the grid hides Qualtrics&apos;
+                        Next button on that page and moves on with its own.
                       </p>
                       <button
                         type="button"

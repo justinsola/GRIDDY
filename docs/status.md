@@ -16,7 +16,7 @@ changes; it is the one place that says where the project stands._
 
 ## Health (checked 1 November 2026)
 
-- `main` is at `c0d1ae4`. `npm run build`, `npm test` (82 tests in 4 files) and `npm run lint` all pass locally on Node 24 and in CI on Node 22.
+- `main` is at `c0d1ae4`. `npm run build`, `npm test` (82 tests in 4 files on `main`; 186 in 13 files with PR 17) and `npm run lint` all pass locally on Node 24 and in CI on Node 22.
 - The live site serves `index.html` and its assets under `/GRIDDY/`; deep links such as `/GRIDDY/history` load the app through `404.html` (the HTTP status is 404, which is expected on GitHub Pages).
 - CI (`.github/workflows/ci.yml`) runs build, tests and lint on every pull request and every push to `main`.
 - Repository settings: description and seven topics set, homepage field points at the live app, Issues enabled (none open). `main` is not protected and the merged branches have not been deleted; both were declined on 31 October to avoid distractions.
@@ -24,7 +24,7 @@ changes; it is the one place that says where the project stands._
 ## What the app does today
 
 - **Editor** (`/`): question text, rows and columns (max 10 each), optional centre cell with its own label, background image URL, barriers (blocked cells with their own colour or image), categories as a comma-separated list with per-category colour, image and layer mode.
-- **Respondent input**: paint (click a category, then cells), dropdown per cell, or drag and drop. Interaction can be turned off for a static display.
+- **Respondent input**: paint (click a category, then cells), dropdown per cell, or drag and drop. The export also supports a look-only grid (`allowInteraction: false`), but the editor has no control for it yet.
 - **Experimental mode**: the grid is pre-filled (fixed, shuffled or weighted) and respondents react with response labels; answers go to `GridPrefills` and `GridResponses` instead of `GridAssignments`.
 - **Respondent preview**: runs the real exported script inside the app.
 - **My Surveys** (`/history`): surveys saved in `localStorage` (`griddy.localSurveys.v1`), JSON backup and restore, multi-select `.qsf` export.
@@ -53,7 +53,7 @@ changes; it is the one place that says where the project stands._
 
 ## Known gaps
 
-- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run for the first time on 1 November 2026 and works for the standard and experimental designs. `docs/testing-in-qualtrics.md` is the process; its "Open defects" section lists what the runs found, currently: no cue that part of the grid is off-screen on a phone and no reminder about empty cells, reactions landing on empty cells in experimental mode, the export dialog ignoring Escape, and the design preview's "Block cells" mode staying on.
+- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run eleven times on 1 November 2026, in ten Qualtrics test projects, on `main` and on the fix branch. `docs/testing-in-qualtrics.md` is the process; PR 17 fixes what the runs and three code reviews found, and the doc's "Open questions" section lists eight behaviours for the maintainer to decide.
 - Tests are unit tests only (export builders, reducer, storage, preview panel). Nothing drives the real UI automatically.
 - The app page has no `description` or social-preview meta tags.
 - Page 7 of the documentation PDF is half blank (cosmetic).

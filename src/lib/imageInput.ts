@@ -38,6 +38,63 @@ function canEncodeWebp(): boolean {
   return webpSupported;
 }
 
+/**
+ * How an uploaded image is re-encoded. Vector images (SVG) have no useful
+ * pixel size of their own, so they are drawn at the full size limit; raster
+ * images are only ever shrunk. Every format that can carry transparency keeps
+ * it: WebP where the browser can encode it, otherwise PNG. JPEG and HEIC
+ * sources, which have no transparency, become JPEG. A planned PNG can still
+ * end up as JPEG once the pixels are known to be opaque (see finalDataUri).
+ */
+export function encodingPlan(
+  type: string,
+  width: number,
+  height: number,
+  maxDim: number,
+  webp: boolean,
+): { width: number; height: number; mime: string } {
+  const longest = Math.max(width, height);
+  const scale = type === "image/svg+xml" ? maxDim / longest : Math.min(1, maxDim / longest);
+  const opaque = /^image\/(jpe?g|hei[cf])$/.test(type);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    mime: webp ? "image/webp" : opaque ? "image/jpeg" : "image/png",
+  };
+}
+
+/** True when no pixel is even partly transparent. `rgba` is canvas pixel
+ * data: four bytes per pixel, alpha last. */
+export function isFullyOpaque(rgba: ArrayLike<number>): boolean {
+  for (let i = 3; i < rgba.length; i += 4) {
+    if (rgba[i] !== 255) return false;
+  }
+  return true;
+}
+
+/**
+ * The data URI to keep for a drawn image. A browser that cannot encode WebP
+ * falls back to lossless PNG, and a lossless photo can take megabytes of the
+ * ~5MB browser storage that holds every saved survey. So when the planned PNG
+ * has no transparent pixels, the image is also encoded as JPEG and the
+ * shorter of the two is kept. SVGs stay PNG: their sharp edges and flat
+ * colours blur in JPEG. `encode` makes a data URI in the given type; the
+ * pixels are only checked, and JPEG only made, when it could be used.
+ */
+export function finalDataUri(
+  planMime: string,
+  sourceType: string,
+  encode: (mime: string) => string,
+  isOpaque: () => boolean,
+): string {
+  const planned = encode(planMime);
+  if (planMime !== "image/png" || sourceType === "image/svg+xml" || !isOpaque()) {
+    return planned;
+  }
+  const jpeg = encode("image/jpeg");
+  return jpeg.length < planned.length ? jpeg : planned;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -48,10 +105,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Read an image file, downscale it so its longest side is at most `maxDim`, and
- * return a compressed base64 data URI. PNG/GIF sources keep an alpha-capable
- * format (WebP when available, else PNG) so transparency is preserved; other
- * sources are encoded as WebP/JPEG for size.
+ * Read an image file, fit it to `maxDim` (see encodingPlan) and return a
+ * compressed base64 data URI. Where the browser can encode WebP, every image
+ * becomes WebP, which keeps transparency. Elsewhere (such as Safari) JPEG
+ * and HEIC sources become JPEG and other sources PNG, unless the PNG has no
+ * transparent pixels and JPEG is smaller (see finalDataUri).
  */
 export async function fileToDataUri(
   file: File,
@@ -76,9 +134,9 @@ export async function fileToDataUri(
       throw new Error("That image appears to be empty.");
     }
 
-    const scale = Math.min(1, maxDim / Math.max(width, height));
-    const outW = Math.max(1, Math.round(width * scale));
-    const outH = Math.max(1, Math.round(height * scale));
+    const plan = encodingPlan(file.type, width, height, maxDim, canEncodeWebp());
+    const outW = plan.width;
+    const outH = plan.height;
 
     const canvas = document.createElement("canvas");
     canvas.width = outW;
@@ -87,16 +145,13 @@ export async function fileToDataUri(
     if (!ctx) throw new Error("Your browser couldn't process that image.");
     ctx.drawImage(img, 0, 0, outW, outH);
 
-    const needsAlpha = file.type === "image/png" || file.type === "image/gif";
-    let mime: string;
-    if (canEncodeWebp()) {
-      mime = "image/webp";
-    } else {
-      mime = needsAlpha ? "image/png" : "image/jpeg";
-    }
-
     // PNG ignores the quality argument; that's fine.
-    return canvas.toDataURL(mime, quality);
+    return finalDataUri(
+      plan.mime,
+      file.type,
+      (mime) => canvas.toDataURL(mime, quality),
+      () => isFullyOpaque(ctx.getImageData(0, 0, outW, outH).data),
+    );
   } finally {
     URL.revokeObjectURL(objectUrl);
   }

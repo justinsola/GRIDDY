@@ -1,33 +1,35 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../EditorContext";
-import { saveSurvey } from "../lib/surveysApi";
+import { MISSING_TITLE_MESSAGE, saveEditorSurvey } from "../lib/saveEditorSurvey";
 
 export default function SaveButton() {
   const { state, dispatch } = useEditor();
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<"saved" | "error" | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  // The timer that will hide the current message. Each click clears it, so a
+  // timer left from an earlier message cannot hide a newer one.
+  const hideTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
 
   const handleClick = async () => {
-    const title = state.config.name.trim();
-    if (!title) {
-      setErrorMsg("Please enter a survey title before saving.");
-      setFlash("error");
-      setTimeout(() => setFlash(null), 3000);
-      return;
-    }
-
+    window.clearTimeout(hideTimer.current);
     setSaving(true);
     setFlash(null);
     try {
-      await saveSurvey(state.config);
-      dispatch({ type: "markSaved" });
+      await saveEditorSurvey(state.config, () => dispatch({ type: "markSaved" }));
       setFlash("saved");
-      setTimeout(() => setFlash(null), 2000);
+      hideTimer.current = window.setTimeout(() => setFlash(null), 2000);
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      const message = (e as Error).message;
+      setErrorMsg(message);
       setFlash("error");
-      setTimeout(() => setFlash(null), 3000);
+      // A missing title is a passing reminder. Keep a failed save on screen
+      // until the next attempt; it means the survey is not stored.
+      if (message === MISSING_TITLE_MESSAGE) {
+        hideTimer.current = window.setTimeout(() => setFlash(null), 3000);
+      }
     } finally {
       setSaving(false);
     }
@@ -50,7 +52,9 @@ export default function SaveButton() {
         {saving ? "Saving…" : flash === "saved" ? "Saved!" : "Save"}
       </button>
       {flash === "error" && (
-        <p className="text-xs text-red-600">{errorMsg}</p>
+        <p role="alert" className="max-w-xs text-right text-xs text-red-600">
+          {errorMsg}
+        </p>
       )}
     </div>
   );

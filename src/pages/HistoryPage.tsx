@@ -8,8 +8,9 @@ import {
   loadSurvey,
   SurveyMeta,
   SurveysExportFile,
+  describeImport,
 } from "../lib/surveysApi";
-import { useEditor } from "../EditorContext";
+import { discardChangesMessage, hasUnsavedChanges, useEditor } from "../EditorContext";
 
 function isValidExportFile(value: unknown): value is SurveysExportFile {
   if (!value || typeof value !== "object") return false;
@@ -34,7 +35,7 @@ function makeExportFileName() {
 }
 
 export default function HistoryPage() {
-  const { dispatch } = useEditor();
+  const { state, dispatch } = useEditor();
   const navigate = useNavigate();
   const [surveys, setSurveys] = useState<SurveyMeta[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -61,6 +62,9 @@ export default function HistoryPage() {
   }, []);
 
   const handleOpen = async (id: string) => {
+    if (hasUnsavedChanges(state) && !window.confirm(discardChangesMessage(state.config.name))) {
+      return;
+    }
     try {
       const config = await loadSurvey(id);
       dispatch({ type: "setConfig", config });
@@ -125,20 +129,9 @@ export default function HistoryPage() {
         throw new Error("Invalid backup file format. Use a GRIDDY export JSON file.");
       }
 
-      const { importedCount, skippedDuplicateCount } = await importSurveys(
-        parsed.surveys,
-      );
+      const result = await importSurveys(parsed.surveys);
       await refreshSurveys();
-
-      if (importedCount === 0 && skippedDuplicateCount === 0) {
-        setNotice("Backup imported, but it did not contain any surveys.");
-      } else if (skippedDuplicateCount === 0) {
-        setNotice(`Imported ${importedCount} survey${importedCount === 1 ? "" : "s"}.`);
-      } else {
-        setNotice(
-          `Imported ${importedCount} survey${importedCount === 1 ? "" : "s"} and skipped ${skippedDuplicateCount} duplicate${skippedDuplicateCount === 1 ? "" : "s"}.`,
-        );
-      }
+      setNotice(describeImport(result));
     } catch (e) {
       if (e instanceof SyntaxError) {
         setError("Import failed: file is not valid JSON.");
@@ -151,6 +144,8 @@ export default function HistoryPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const name = surveys.find((s) => s.id === id)?.name ?? "this survey";
+    if (!window.confirm(`Delete "${name}" from this browser? This cannot be undone.`)) return;
     try {
       await deleteSurvey(id);
       setSurveys((prev) => prev.filter((s) => s.id !== id));

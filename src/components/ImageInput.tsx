@@ -14,6 +14,8 @@ interface Props {
   warnBytes?: number;
   /** Small helper note shown under the field (e.g. "use a transparent PNG"). */
   hint?: string;
+  /** Longest side, in pixels, an uploaded image is reduced to. Defaults to 512. */
+  maxDim?: number;
 }
 
 const DEFAULT_WARN_BYTES = 500 * 1024;
@@ -28,6 +30,7 @@ export const ImageInput: React.FC<Props> = ({
   onChange,
   placeholder = "https://example.com/icon.png",
   warnBytes = DEFAULT_WARN_BYTES,
+  maxDim,
   hint,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +46,7 @@ export const ImageInput: React.FC<Props> = ({
     setError(null);
     setBusy(true);
     try {
-      const dataUri = await fileToDataUri(file);
+      const dataUri = await fileToDataUri(file, maxDim ? { maxDim } : undefined);
       onChange(dataUri);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't process that image.");

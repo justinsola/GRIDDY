@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
+import { MISSING_TITLE_MESSAGE, saveEditorSurvey } from "../lib/saveEditorSurvey";
+import { findFieldCollision } from "../lib/combineFields";
+import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
@@ -13,13 +16,17 @@ import {
  * field name(s). */
 function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfItem {
   const fallback = survey.id.slice(0, 8);
-  const base = fieldLabel.trim() || fallback;
-  const isExperimental = !!survey.config.experimental?.enabled;
+  // A label with no letters or digits would clean up to nothing, leaving
+  // only the shared default name; use the survey's id instead.
+  const base = /[A-Za-z0-9]/.test(fieldLabel) ? fieldLabel.trim() : fallback;
+  // Saved surveys go through the same repairs as a survey opened in the editor.
+  const config = normalizeConfig(survey.config);
+  const isExperimental = !!config.experimental?.enabled;
 
   if (isExperimental) {
     return {
       title: survey.name || survey.id,
-      config: survey.config,
+      config,
       prefillsField: sanitizeEmbeddedDataField(
         `GridPrefills_${base}`,
         `GridPrefills_${fallback}`,
@@ -33,13 +40,32 @@ function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfI
 
   return {
     title: survey.name || survey.id,
-    config: survey.config,
+    config,
     embeddedDataField: sanitizeEmbeddedDataField(
       `GridAssignments_${base}`,
       `GridAssignments_${fallback}`,
     ),
   };
 }
+
+/** A grid's field label until the researcher types one: the field name
+ * ending set in its export dialog, so both ways of exporting it agree, or
+ * else the survey's name. */
+function defaultFieldLabel(survey: ExportedSurvey): string {
+  const ending = survey.config.survey.fieldSuffix?.trim() ?? "";
+  return /[A-Za-z0-9]/.test(ending) ? ending : survey.name ?? "";
+}
+
+/** The embedded-data field name(s) a question's answers are saved under. */
+function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
+  const item = buildQsfItem(survey, fieldLabel);
+  return [item.embeddedDataField, item.prefillsField, item.responsesField]
+    .filter(Boolean)
+    .join(" and ");
+}
+
+export const EDITOR_NAME_MISSING =
+  "The survey open in the editor has no name. Name it there first, or use the saved version instead.";
 
 function makeQsfFileName() {
   const iso = new Date().toISOString().replace(/[:.]/g, "-");
@@ -48,6 +74,7 @@ function makeQsfFileName() {
 
 export default function CombineSurveysPage() {
   const navigate = useNavigate();
+  const { state: editorState, dispatch } = useEditor();
   const [surveys, setSurveys] = useState<ExportedSurvey[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [fieldOverrides, setFieldOverrides] = useState<Record<string, string>>({});
@@ -56,6 +83,9 @@ export default function CombineSurveysPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [savingEditor, setSavingEditor] = useState(false);
+  // Surveys to download as saved, leaving out the editor's unsaved changes.
+  const [savedCopyIds, setSavedCopyIds] = useState<string[]>([]);
 
   useEffect(() => {
     setFetching(true);
@@ -100,31 +130,50 @@ export default function CombineSurveysPage() {
   const qsfItems = useMemo(
     () =>
       ordered.map((survey) =>
-        buildQsfItem(survey, fieldOverrides[survey.id] ?? survey.name ?? ""),
+        buildQsfItem(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey)),
       ),
     [ordered, fieldOverrides],
   );
 
-  const fieldCollisionError = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (let i = 0; i < qsfItems.length; i++) {
-      const item = qsfItems[i];
-      const title = ordered[i]?.name || `Question ${i + 1}`;
-      for (const field of qsfEmbeddedFields(item)) {
-        const claimedBy = seen.get(field);
-        if (claimedBy && claimedBy !== title) {
-          return `"${title}" and "${claimedBy}" both write to the field "${field}". Give one of them a different data field name.`;
-        }
-        seen.set(field, title);
-      }
+  const fieldCollisionError = useMemo(
+    () => findFieldCollision(qsfItems, ordered.map((survey) => survey.name)),
+    [qsfItems, ordered],
+  );
+
+  // The file is built from saved surveys. If one of them has edits in the
+  // editor that were never saved, the download would ship the old version.
+  const unsavedEditsError = useMemo(() => {
+    const open = ordered.find((survey) => survey.id === editorState.config.id);
+    if (!open || savedCopyIds.includes(open.id) || !hasUnsavedChanges(editorState)) return null;
+    return `"${open.name}" has changes in the editor that are not saved. Choose which version this survey uses.`;
+  }, [ordered, editorState, savedCopyIds]);
+
+  // Saving from here keeps the questions, field names and title chosen on
+  // this page, which leaving for the editor would reset.
+  const saveEditorChanges = async () => {
+    setSavingEditor(true);
+    setError(null);
+    try {
+      // Reload the list before the editor counts as saved, so Download never
+      // turns on while the list still holds the old copy.
+      await saveEditorSurvey(
+        editorState.config,
+        () => dispatch({ type: "markSaved" }),
+        async () => setSurveys((await exportSurveys()).surveys),
+      );
+    } catch (e) {
+      const message = (e as Error).message;
+      // This page has its own survey name box; say which name is missing.
+      setError(message === MISSING_TITLE_MESSAGE ? EDITOR_NAME_MISSING : message);
+    } finally {
+      setSavingEditor(false);
     }
-    return null;
-  }, [qsfItems, ordered]);
+  };
 
   const defaultTitle = `GRIDDY Survey (${ordered.length} grid${ordered.length === 1 ? "" : "s"})`;
 
   const handleDownload = () => {
-    if (ordered.length === 0 || fieldCollisionError) return;
+    if (ordered.length === 0 || fieldCollisionError || unsavedEditsError) return;
 
     setDownloading(true);
     setError(null);
@@ -149,7 +198,8 @@ export default function CombineSurveysPage() {
       setNotice(
         `Downloaded a Qualtrics .qsf with ${ordered.length} grid${ordered.length === 1 ? "" : "s"} ` +
           `in the order shown, and ${fieldCount} embedded field${fieldCount === 1 ? "" : "s"}. ` +
-          `In Qualtrics: Projects → Create project → Survey → "Import a QSF file", then Publish.`,
+          `In Qualtrics: Create a new project → Survey → Get started → "Import a QSF file", then Publish. ` +
+          `Results are under Data & Analysis; if a field's column isn't shown, add it with Column chooser → Embedded Data.`,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -263,8 +313,14 @@ export default function CombineSurveysPage() {
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent-tint text-xs font-bold text-accent">
                       {index + 1}
                     </span>
-                    <span className="font-semibold text-ink">
-                      {survey.name || survey.id.slice(0, 8)}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-semibold text-ink">
+                        {survey.name || survey.id.slice(0, 8)}
+                      </span>
+                      <span className="break-all font-mono text-[10.5px] text-ink-faint">
+                        Saved in Qualtrics as{" "}
+                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey))}
+                      </span>
                     </span>
                   </div>
 
@@ -273,7 +329,7 @@ export default function CombineSurveysPage() {
                       Data field
                       <input
                         type="text"
-                        value={fieldOverrides[survey.id] ?? survey.name ?? ""}
+                        value={fieldOverrides[survey.id] ?? defaultFieldLabel(survey)}
                         onChange={(e) =>
                           setFieldOverrides((prev) => ({
                             ...prev,
@@ -316,6 +372,26 @@ export default function CombineSurveysPage() {
             </ul>
           )}
 
+          {unsavedEditsError && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="text-sm font-semibold text-accent">{unsavedEditsError}</p>
+              <button
+                type="button"
+                onClick={saveEditorChanges}
+                disabled={savingEditor}
+                className="rounded-md bg-accent-tint px-3 py-1.5 text-sm font-semibold text-accent hover:opacity-90 disabled:opacity-50"
+              >
+                {savingEditor ? "Saving…" : "Save the editor's changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSavedCopyIds((prev) => [...prev, editorState.config.id])}
+                className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
+              >
+                Use the saved version instead
+              </button>
+            </div>
+          )}
           {fieldCollisionError && (
             <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>
           )}
@@ -326,7 +402,9 @@ export default function CombineSurveysPage() {
           <button
             type="button"
             onClick={handleDownload}
-            disabled={downloading || ordered.length === 0 || !!fieldCollisionError}
+            disabled={
+              downloading || ordered.length === 0 || !!fieldCollisionError || !!unsavedEditsError
+            }
             className="rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
           >
             {downloading ? "Preparing…" : "Download .qsf"}

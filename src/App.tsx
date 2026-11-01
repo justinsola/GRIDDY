@@ -4,7 +4,7 @@ import ConfigPanel from "./components/ConfigPanel";
 import PreviewPanel from "./components/PreviewPanel";
 import SaveButton from "./components/SaveButton";
 import TourGuide from "./components/TourGuide";
-import { useEditor } from "./EditorContext";
+import { discardChangesMessage, hasUnsavedChanges, useEditor } from "./EditorContext";
 
 function App() {
   const { state, dispatch } = useEditor();
@@ -63,7 +63,12 @@ function App() {
           <div className="flex items-center gap-5">
             <button
               type="button"
-              onClick={() => dispatch({ type: "newSurvey" })}
+              onClick={() => {
+                if (hasUnsavedChanges(state) && !window.confirm(discardChangesMessage(state.config.name))) {
+                  return;
+                }
+                dispatch({ type: "newSurvey" });
+              }}
               className="text-[13.5px] font-semibold text-ink-muted hover:text-ink"
             >
               New

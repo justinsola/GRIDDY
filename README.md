@@ -95,18 +95,32 @@ manual setup in Qualtrics.
 3. Click **Export to Qualtrics**, then **Download .qsf**. (On the *My Surveys*
    page you can select multiple saved surveys and export them all into one
    `.qsf`, one grid per page.)
-4. In Qualtrics, go to **Projects → Create project → Survey → "Import a QSF file"**
-   and select the downloaded `.qsf`.
+4. In Qualtrics, click **Create a new project → Survey → Get started**, choose
+   **"Import a QSF file"**, select the downloaded `.qsf`, and click
+   **Create project**.
 5. **Publish.** The grid renders and saves responses automatically into the
-   pre-created embedded-data fields (`GridAssignments`, or `GridPrefills` /
-   `GridResponses` in experimental mode), visible under **Data & Analysis**.
+   pre-created embedded-data fields, visible under **Data & Analysis**:
+   `GridAssignments` for a single grid, or `GridPrefills` and `GridResponses`
+   in experimental mode. In a multi-question survey each grid gets its own
+   fields, named after its data field: `GridAssignments_<name>`, or
+   `GridPrefills_<name>` and `GridResponses_<name>`. The multi-question page
+   shows each grid's exact field names. A grid exported on its own can get
+   a **Field name ending** in the export dialog: `Q2` saves to
+   `GridAssignments_Q2`. If a field's column isn't shown in
+   **Data & Analysis**, add it with **Column chooser → Embedded Data**; data
+   downloads always include it.
 
 ### Manual fallback
 
 To paste into an existing survey instead, use **Copy code** in the export
 dialog: add an Embedded Data element with the listed field(s) to your Survey
-Flow, add a Text/Graphic question, and paste the script into its JavaScript
-editor.
+Flow, add a Text/Graphic question on its own page, and paste the script into
+its JavaScript editor. Unless the grid allows empty cells, it hides Qualtrics'
+Next button on its page and moves on with its own Next. Each grid in a survey
+needs its own fields: give each one its own **Field name ending** in the
+export dialog, or combine them on the multi-question page, which names each
+grid's fields. A grid question copied in Qualtrics, or repeated with Loop &
+Merge, would share its fields with the original.
 
 ## Deployment
 

@@ -56,6 +56,25 @@ export function sanitizeEmbeddedDataField(name: string, fallback: string): strin
   return normalized.length > 64 ? normalized.slice(0, 64) : normalized;
 }
 
+/** The embedded-data fields a grid exported on its own saves to: the plain
+ * names, or the names with the survey's field name ending. */
+export function singleGridFieldNames(config: GridConfig): Required<QualtricsExportOptions> {
+  const ending = (config.survey.fieldSuffix ?? "").trim();
+  // An ending with no letters or digits would clean up to nothing.
+  if (!/[A-Za-z0-9]/.test(ending)) {
+    return {
+      embeddedDataField: "GridAssignments",
+      prefillsField: "GridPrefills",
+      responsesField: "GridResponses",
+    };
+  }
+  return {
+    embeddedDataField: sanitizeEmbeddedDataField(`GridAssignments_${ending}`, "GridAssignments"),
+    prefillsField: sanitizeEmbeddedDataField(`GridPrefills_${ending}`, "GridPrefills"),
+    responsesField: sanitizeEmbeddedDataField(`GridResponses_${ending}`, "GridResponses"),
+  };
+}
+
 export function buildQualtricsSnippet(
   config: GridConfig,
   options: QualtricsExportOptions = {},
@@ -67,7 +86,9 @@ export function buildQualtricsSnippet(
     layout: config.layout,
     tuning: config.tuning,
     survey: config.survey,
-    experimental: config.experimental ?? null,
+    // A switched-off experiment stays in the editor but is not shipped,
+    // so its settings and reaction images do not bloat the exported script.
+    experimental: config.experimental?.enabled ? config.experimental : null,
   };
   const cfgJson = JSON.stringify(exportConfig, null, 2);
 
@@ -84,6 +105,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var container = this.getQuestionTextContainer();
 	if (!container) return;
 
+	// The question as written in Qualtrics, kept for when GRIDDY's own
+	// question text is blank.
+	var qualtricsQuestionHtml = container.innerHTML;
 	container.innerHTML = "";
 	container.style.fontFamily = "'Hanken Grotesk', sans-serif";
 	container.style.color = "#2a241c";
@@ -96,11 +120,30 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		document.head.appendChild(fontLink);
 	}
 
+	// Buttons and selects do not inherit the page font by default, and a long
+	// word in a narrow cell should wrap rather than be cut off mid-word. Text
+	// keeps its designed size either way.
+	if (!document.getElementById("griddy-styles")) {
+		var griddyStyles = document.createElement("style");
+		griddyStyles.id = "griddy-styles";
+		griddyStyles.textContent = "[data-griddy-root] button, [data-griddy-root] select { font-family: inherit; } [data-griddy-grid] div { overflow-wrap: anywhere; } [data-griddy-grid] [role=button]:focus-visible { box-shadow: 0 0 0 3px #1d4ed8; }";
+		document.head.appendChild(griddyStyles);
+	}
+	container.setAttribute("data-griddy-root", "");
+
 	var cfg = ${cfgJson};
 	var surveyCfg = cfg.survey || {};
 	var categories = [];
 	var allowInteraction = !!surveyCfg.allowInteraction;
 	var selectionMode = surveyCfg.selectionMode || "paint";
+	// What happens when the respondent presses Next with cells left empty:
+	// "remind" (the default) warns and lets them continue, "force" asks them
+	// to fill every cell, "allow" skips the check.
+	var skipBehavior = surveyCfg.skipBehavior === "allow" || surveyCfg.skipBehavior === "force"
+		? surveyCfg.skipBehavior
+		: "remind";
+	var reminderShown = false;
+	var cellEls = {};
 	var assignments = {};
 	var activeCategory = null;
 	var draggedCategory = null;
@@ -128,6 +171,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	// Structural barriers (walls): blocked cells are non-interactive in every mode.
 	var blockedCells = (cfg.layout && cfg.layout.blockedCells) || {};
+	// With a background image (a map, say), empty cells are see-through so
+	// respondents can use it to decide where to place things.
+	var emptyCellFill = cfg.layout && cfg.layout.backgroundImageUrl ? "rgba(251,248,241,0.55)" : "#fbf8f1";
 	var barrierMeta = (cfg.layout && cfg.layout.barrierMeta) || {};
 
 	if (surveyCfg.categoriesCsv) {
@@ -157,6 +203,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		return barrierMeta[name] || {};
 	}
 
+	// Quote an image URL for CSS. Double quotes inside the URL are
+	// percent-encoded, so a URL containing quotes or apostrophes cannot end
+	// the CSS string early.
+	function cssUrl(u) {
+		return 'url("' + String(u).split('"').join("%22") + '")';
+	}
+
 	// Append a background-colored filler positioned with fixed pixel offsets.
 	// css keys are among top/bottom/left/right/width/height (all "<n>px").
 	function makeFiller(color, css, image, imagePos) {
@@ -164,7 +217,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		f.style.position = "absolute";
 		f.style.backgroundColor = color;
 		if (image) {
-			f.style.backgroundImage = "url('" + image + "')";
+			f.style.backgroundImage = cssUrl(image);
 			f.style.backgroundSize = "cover";
 			f.style.backgroundRepeat = "no-repeat";
 			f.style.backgroundPosition = imagePos || "center";
@@ -188,7 +241,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var g = gap + "px";
 		var ng = -gap + "px";
 		var radius = 6; // matches the loop's 0.375rem cell radius
-		function at(r, c) { return blockedCells["r" + r + "-c" + c] === name; }
+		// Only neighbours inside the current grid join; barriers left over from a
+		// larger grid would otherwise draw bridges out past the frame.
+		function at(r, c) {
+			if (r < 1 || c < 1 || r > cfg.layout.rows || c > cfg.layout.cols) return false;
+			if (cfg.layout.includeCenterCell && r === centerRowVal && c === centerColVal) return false;
+			return blockedCells["r" + r + "-c" + c] === name;
+		}
 		var cUp = at(row - 1, col);
 		var cDown = at(row + 1, col);
 		var cLeft = at(row, col - 1);
@@ -240,25 +299,103 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		return expCfg.responseLabelMeta[lbl] || {};
 	}
 
+	// The embedded-data fields this grid writes, and which question in this
+	// browser tab last wrote each of them. Two grids saving under the same
+	// field names (a duplicated question, or grids exported separately) then
+	// never show each other's answers, and a grid that is only drawn does not
+	// overwrite the other one's.
+	var myFields = isExperimental
+		? [${JSON.stringify(prefillsField)}, ${JSON.stringify(responsesField)}]
+		: [${JSON.stringify(embeddedDataField)}];
+	var questionKey = String(question.questionId || "");
+	var fieldOwners = window.griddyFieldOwners || (window.griddyFieldOwners = {});
+	function fieldsOwnedElsewhere() {
+		return myFields.some(function (f) {
+			return !!fieldOwners[f] && fieldOwners[f] !== questionKey;
+		});
+	}
+
 	function persistAll() {
 		if (isExperimental) {
 			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(prefillsField)}, JSON.stringify(prefills));
 			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(responsesField)}, JSON.stringify(experimentalResponses));
-		} else {
+		} else if (allowInteraction && categories.length > 0) {
 			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(embeddedDataField)}, JSON.stringify(assignments));
+		} else {
+			// A grid respondents only look at has no answers to record.
+			return;
 		}
+		myFields.forEach(function (f) { fieldOwners[f] = questionKey; });
+		if (reminderShown) onAnswersChanged();
+		refreshCellLabels();
+	}
+
+	// Pre-fills only go in cells of the current grid that can hold one: not a
+	// barrier and not the centre cell. Painted keys left over from a larger
+	// grid, or a centre cell switched on after painting, would otherwise be
+	// shown nowhere but still recorded in the pre-fill field.
+	function isPrefillable(k, centerRow, centerCol) {
+		if (blockedCells[k] || k.charAt(0) !== "r") return false;
+		var parts = k.slice(1).split("-c");
+		var r = parseInt(parts[0], 10);
+		var c = parseInt(parts[1], 10);
+		if (!(r >= 1 && r <= cfg.layout.rows && c >= 1 && c <= cfg.layout.cols)) return false;
+		return !(cfg.layout.includeCenterCell && r === centerRow && c === centerCol);
+	}
+
+	// Answers already recorded in this response: going Back to this page, or
+	// resuming a saved response, shows the grid as it was left (and the same
+	// pre-fills), instead of an empty grid that would overwrite them.
+	function readSavedField(field) {
+		try {
+			var engine = Qualtrics.SurveyEngine;
+			var raw = typeof engine.getEmbeddedData === "function" ? engine.getEmbeddedData(field) : "";
+			if (!raw || typeof raw !== "string") return null;
+			var parsed = JSON.parse(raw);
+			return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	// Returns true when the pre-fills came from the response, so they are not
+	// drawn again.
+	function restoreSavedAnswers(centerRow, centerCol) {
+		// Answers another grid saved under the same field names are not this
+		// grid's.
+		if (fieldsOwnedElsewhere()) return false;
+		if (isExperimental) {
+			var shown = readSavedField(${JSON.stringify(prefillsField)});
+			if (!shown) return false;
+			Object.keys(shown).forEach(function (k) {
+				if (categories.indexOf(shown[k]) !== -1 && isPrefillable(k, centerRow, centerCol)) prefills[k] = shown[k];
+			});
+			// Saved pre-fills that do not fit this grid are drawn afresh.
+			if (Object.keys(prefills).length === 0) return false;
+			var reactions = readSavedField(${JSON.stringify(responsesField)}) || {};
+			Object.keys(reactions).forEach(function (k) {
+				if (prefills[k] && responseLabels.indexOf(reactions[k]) !== -1) experimentalResponses[k] = reactions[k];
+			});
+			return true;
+		}
+		if (!(allowInteraction && categories.length > 0)) return false;
+		var saved = readSavedField(${JSON.stringify(embeddedDataField)}) || {};
+		Object.keys(saved).forEach(function (k) {
+			if (categories.indexOf(saved[k]) !== -1 && isPrefillable(k, centerRow, centerCol)) assignments[k] = saved[k];
+		});
+		return false;
 	}
 
 	function computePrefills(totalCells, centerRow, centerCol) {
 		if (!isExperimental) return;
 		if (prefillMode === "fixed") {
 			Object.keys(fixedAssignments).forEach(function (k) {
-				if (blockedCells[k]) return;
+				if (!isPrefillable(k, centerRow, centerCol)) return;
 				prefills[k] = fixedAssignments[k];
 			});
 		} else if (prefillMode === "shuffle") {
 			var keys = Object.keys(fixedAssignments).filter(function (k) {
-				return !blockedCells[k];
+				return isPrefillable(k, centerRow, centerCol);
 			});
 			var values = keys.map(function (k) { return fixedAssignments[k]; });
 			for (var si = values.length - 1; si > 0; si--) {
@@ -325,10 +462,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		topDiv.style.display = "flex";
 		topDiv.style.flexDirection = "column";
 		topDiv.style.overflow = "hidden";
-		topDiv.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
+		topDiv.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : emptyCellFill;
 		topDiv.style.borderBottom = catColor ? ("1px solid " + hexToRgba(catColor, 0.4)) : "1px solid #e2dccf";
 
-		if (catName) {
+		if (catName && catImage && (meta.layerMode === "front" || meta.layerMode === "behind")) {
+			appendCategoryContent(topDiv, catName, catColor || "#60a5fa", catImage, meta.layerMode, true);
+			if (meta.layerMode === "front") topDiv.style.backgroundColor = "transparent";
+		} else if (catName) {
 			if (catImage) {
 				var imgWrap = document.createElement("div");
 				imgWrap.style.flex = "1";
@@ -386,8 +526,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			topDiv.appendChild(emptyDiv);
 		}
 
-		cellRef.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
+		cellRef.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : emptyCellFill;
 		cellRef.style.borderColor = catColor || "#e2dccf";
+		if (catName && catImage && meta.layerMode === "front") {
+			cellRef.style.backgroundColor = "transparent";
+			cellRef.style.borderColor = hexToRgba(catColor || "#60a5fa", 0.5);
+		}
 		cellRef.appendChild(topDiv);
 
 		// Bottom portion: how the respondent reacts depends on selectionMode.
@@ -431,8 +575,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					oLabel.style.overflow = "hidden";
 					oLabel.style.textOverflow = "ellipsis";
 					oLabel.style.padding = "0 2px 1px";
-					oLabel.style.color = respColor;
-					oLabel.style.backgroundColor = hexToRgba(respColor, 0.15);
+					oLabel.style.color = "#2a241c";
+					oLabel.style.backgroundColor = hexToRgba(respColor, 0.3);
 					oLabel.style.borderTop = "1px solid " + hexToRgba(respColor, 0.4);
 					oLabel.style.zIndex = "11";
 					cellRef.appendChild(oLabel);
@@ -445,7 +589,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					band.style.alignItems = "center";
 					band.style.overflow = "hidden";
 					band.style.padding = "0 2px 2px";
-					band.style.backgroundColor = hexToRgba(respColor, 0.15);
+					band.style.backgroundColor = hexToRgba(respColor, 0.3);
 					band.style.borderTop = "1px solid " + hexToRgba(respColor, 0.4);
 					var rText = document.createElement("div");
 					rText.textContent = placed;
@@ -457,18 +601,19 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					rText.style.whiteSpace = "nowrap";
 					rText.style.overflow = "hidden";
 					rText.style.textOverflow = "ellipsis";
-					rText.style.color = respColor;
+					rText.style.color = "#2a241c";
 					band.appendChild(rText);
 					cellRef.appendChild(band);
 				}
 			}
 			return;
 		}
-		if (responseLabels.length > 0) {
+		if (responseLabels.length > 0 && catName) {
 			var bottomDiv = document.createElement("div");
 			bottomDiv.style.flexShrink = "0";
 			bottomDiv.style.padding = "2px";
 			var select = document.createElement("select");
+			select.setAttribute("aria-label", "Reaction to " + catName + " in " + rowColText(key));
 			select.style.width = "100%";
 			select.style.border = "1px solid #e2dccf";
 			select.style.borderRadius = "4px";
@@ -476,7 +621,6 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			select.style.padding = "2px 4px";
 			select.style.fontSize = "9px";
 			select.style.color = "#2a241c";
-			select.style.outline = "none";
 
 			var emptyOpt = document.createElement("option");
 			emptyOpt.value = "";
@@ -507,22 +651,81 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 	}
 
+	// Draw a category's image and name into a container using the layer mode
+	// chosen in the editor, by the same rules as its design preview: "front"
+	// lays the image over the whole cell with the name on a coloured strip,
+	// "behind" shows a faint image under the name. Returns true for "front",
+	// false for "behind", and null for "replace" (or no image), which the
+	// caller draws itself.
+	function appendCategoryContent(parent, catName, catColor, catImage, layerMode, textAtTop) {
+		if (!catImage || (layerMode !== "front" && layerMode !== "behind")) return null;
+		parent.style.position = "relative";
+		var layered = document.createElement("img");
+		layered.src = catImage;
+		layered.alt = catName;
+		layered.style.position = "absolute";
+		layered.style.top = "0";
+		layered.style.left = "0";
+		layered.style.width = "100%";
+		layered.style.height = "100%";
+		layered.style.objectFit = "contain";
+		if (layerMode === "behind") layered.style.opacity = "0.2";
+		parent.appendChild(layered);
+		var name = document.createElement("div");
+		name.textContent = catName;
+		name.style.textAlign = "center";
+		name.style.lineHeight = "1.2";
+		if (layerMode === "front") {
+			name.style.position = "absolute";
+			name.style.left = "0";
+			name.style.right = "0";
+			name.style[textAtTop ? "top" : "bottom"] = "0";
+			name.style.padding = textAtTop ? "2px 2px 0" : "0 2px 2px";
+			name.style.fontSize = "8px";
+			name.style.fontWeight = "500";
+			name.style.whiteSpace = "nowrap";
+			name.style.overflow = "hidden";
+			name.style.textOverflow = "ellipsis";
+			name.style.backgroundColor = hexToRgba(catColor, 0.75);
+			name.style.color = "#0f172a";
+		} else {
+			name.style.position = "relative";
+			name.style.zIndex = "1";
+			name.style.flex = "1";
+			name.style.display = "flex";
+			name.style.alignItems = "center";
+			name.style.justifyContent = "center";
+			name.style.padding = "4px";
+			name.style.fontSize = "10px";
+		}
+		parent.appendChild(name);
+		return layerMode === "front";
+	}
+
 	function resetCellBaseStyles(cellRef, isCenterCell) {
 		cellRef.style.display = "flex";
 		cellRef.style.flexDirection = "column";
 		cellRef.style.alignItems = "stretch";
 		cellRef.style.justifyContent = "center";
 		cellRef.style.overflow = "hidden";
-		cellRef.style.backgroundColor = isCenterCell ? "#f7ece9" : "#fbf8f1";
+		cellRef.style.backgroundColor = isCenterCell ? "#f7ece9" : emptyCellFill;
 		cellRef.style.borderColor = isCenterCell ? "#8a2e3b" : "#e2dccf";
 		cellRef.style.color = "#2a241c";
 	}
 
-	function renderCellContent(cellRef, catName, catColor, catImage) {
+	function renderCellContent(cellRef, catName, catColor, catImage, layerMode) {
 		cellRef.innerHTML = "";
 		resetCellBaseStyles(cellRef, false);
 		cellRef.style.backgroundColor = hexToRgba(catColor, 0.2);
 		cellRef.style.borderColor = catColor;
+		var layered = appendCategoryContent(cellRef, catName, catColor, catImage, layerMode, false);
+		if (layered !== null) {
+			if (layered) {
+				cellRef.style.backgroundColor = "transparent";
+				cellRef.style.borderColor = hexToRgba(catColor, 0.5);
+			}
+			return;
+		}
 
 		if (catImage) {
 			var imgWrap = document.createElement("div");
@@ -592,22 +795,57 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			cellRef.style.backgroundColor = hexToRgba(assignedColor, 0.2);
 			cellRef.style.borderColor = assignedColor;
 
-			var assignedLabel = document.createElement("div");
-			assignedLabel.style.flex = "1";
-			assignedLabel.style.minHeight = "0";
-			assignedLabel.style.display = "flex";
-			assignedLabel.style.alignItems = "center";
-			assignedLabel.style.justifyContent = "center";
-			assignedLabel.style.overflow = "hidden";
-			assignedLabel.style.textAlign = "center";
-			assignedLabel.style.fontSize = "10px";
-			assignedLabel.style.fontWeight = "500";
-			assignedLabel.style.lineHeight = "1.2";
-			assignedLabel.textContent = assigned;
-			cellRef.appendChild(assignedLabel);
+			// The chosen category, drawn the way the editor's design preview
+			// draws it (image, name and layer mode), above the dropdown.
+			var assignedBox = document.createElement("div");
+			assignedBox.style.flex = "1";
+			assignedBox.style.minHeight = "0";
+			assignedBox.style.display = "flex";
+			assignedBox.style.flexDirection = "column";
+			assignedBox.style.overflow = "hidden";
+			cellRef.appendChild(assignedBox);
+			var assignedLayered = appendCategoryContent(assignedBox, assigned, assignedColor, meta.imageUrl || "", meta.layerMode, false);
+			if (assignedLayered) {
+				cellRef.style.backgroundColor = "transparent";
+				cellRef.style.borderColor = hexToRgba(assignedColor, 0.5);
+			}
+			if (assignedLayered === null) {
+				if (meta.imageUrl) {
+					var assignedImgWrap = document.createElement("div");
+					assignedImgWrap.style.flex = "1";
+					assignedImgWrap.style.minHeight = "0";
+					assignedImgWrap.style.display = "flex";
+					assignedImgWrap.style.alignItems = "center";
+					assignedImgWrap.style.justifyContent = "center";
+					assignedImgWrap.style.overflow = "hidden";
+					var assignedImg = document.createElement("img");
+					assignedImg.src = meta.imageUrl;
+					assignedImg.alt = assigned;
+					assignedImg.style.maxWidth = "100%";
+					assignedImg.style.maxHeight = "100%";
+					assignedImg.style.objectFit = "contain";
+					assignedImgWrap.appendChild(assignedImg);
+					assignedBox.appendChild(assignedImgWrap);
+				}
+
+				var assignedLabel = document.createElement("div");
+				assignedLabel.style.flex = meta.imageUrl ? "0 0 auto" : "1";
+				assignedLabel.style.minHeight = "0";
+				assignedLabel.style.display = "flex";
+				assignedLabel.style.alignItems = "center";
+				assignedLabel.style.justifyContent = "center";
+				assignedLabel.style.overflow = "hidden";
+				assignedLabel.style.textAlign = "center";
+				assignedLabel.style.fontSize = "10px";
+				assignedLabel.style.fontWeight = "500";
+				assignedLabel.style.lineHeight = "1.2";
+				assignedLabel.textContent = assigned;
+				assignedBox.appendChild(assignedLabel);
+			}
 		}
 
 		var select = document.createElement("select");
+		select.setAttribute("aria-label", "Label for " + rowColText(key));
 		select.style.width = "100%";
 		select.style.minWidth = "0";
 		select.style.flexShrink = "0";
@@ -639,6 +877,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			}
 			persistAll();
 			renderCell(cellRef, key, isCenterCell);
+			// Rebuilding the cell replaced this dropdown; keep keyboard focus on it.
+			var replacement = cellRef.querySelector("select");
+			if (replacement) replacement.focus();
 		};
 
 		cellRef.appendChild(select);
@@ -646,7 +887,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	function renderCell(cellRef, key, isCenterCell) {
 		var barrierName = blockedCells[key];
-		if (barrierName) {
+		if (barrierName && !isCenterCell) {
 			// Parse "r{row}-c{col}" without a regex (regex escapes don't survive
 			// this template string). key.slice(1) drops the leading "r".
 			var parts = key.slice(1).split("-c");
@@ -671,7 +912,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var assigned = assignments[key];
 		if (assigned) {
 			var meta = getCategoryMeta(assigned);
-			renderCellContent(cellRef, assigned, meta.color || "#60a5fa", meta.imageUrl || "");
+			renderCellContent(cellRef, assigned, meta.color || "#60a5fa", meta.imageUrl || "", meta.layerMode);
 			return;
 		}
 
@@ -700,8 +941,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		delBtn.style.position = "absolute";
 		delBtn.style.top = "2px";
 		delBtn.style.right = "2px";
-		delBtn.style.width = "14px";
-		delBtn.style.height = "14px";
+		delBtn.style.width = "20px";
+		delBtn.style.height = "20px";
 		delBtn.style.lineHeight = "1";
 		delBtn.style.display = "flex";
 		delBtn.style.alignItems = "center";
@@ -773,6 +1014,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			draggedCategory = null;
 		};
 
+		enableTouchDrag(chip, isClear ? "__CLEAR__" : catName, false);
+		enableKeyboardPick(chip, isClear ? "__CLEAR__" : catName);
 		return chip;
 	}
 
@@ -807,11 +1050,288 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			draggedResponseLabel = null;
 		};
 
+		enableTouchDrag(chip, isClear ? "__CLEAR_RESP__" : lbl, true);
+		enableKeyboardPick(chip, isClear ? "__CLEAR_RESP__" : lbl);
 		return chip;
 	}
 
-	var questionText = document.createElement("p");
-	questionText.textContent = cfg.layout.questionText;
+	// Touch screens. HTML5 drag and drop does not start from a finger on many
+	// phones, and on others only after an unannounced long press, so a finger
+	// drags a copy of the chip instead and drops it on the cell under it. The
+	// interaction stays a drag; mouse drags still use the browser's own drag
+	// and drop. The cell handlers below do the actual work, so both paths
+	// validate and save answers the same way.
+	var touchDrag = null;
+
+	// Activations that come from the keyboard or a screen reader rather than
+	// a mouse or a finger, told apart the way React Aria does it. Only these
+	// pick a label up and place it, so for pointers drag and drop stays a drag.
+	function isAndroid() {
+		return /Android/i.test(navigator.userAgent || "");
+	}
+	function isAssistiveClick(e) {
+		// NVDA or JAWS with Firefox.
+		if (e.mozInputSource === 0 && e.isTrusted) return true;
+		// TalkBack.
+		if (isAndroid() && e.pointerType) return e.buttons === 1;
+		// Enter or Space on a button; screen readers in Chrome, Edge and Safari.
+		return e.detail === 0 && !e.pointerType;
+	}
+	// VoiceOver on an iPhone or iPad taps with a pointer of no size, and
+	// TalkBack's double tap can look like a 1 px mouse with no pressure.
+	function isVirtualPointer(e) {
+		if (!isAndroid() && e.width === 0 && e.height === 0) return true;
+		return e.width === 1 && e.height === 1 && e.pressure === 0 && e.detail === 0 && e.pointerType === "mouse";
+	}
+
+	function cellUnder(x, y) {
+		var node = typeof document.elementFromPoint === "function" ? document.elementFromPoint(x, y) : null;
+		while (node && node !== document.body) {
+			for (var k in cellEls) {
+				if (cellEls[k] === node) return node;
+			}
+			node = node.parentNode;
+		}
+		return null;
+	}
+
+	function touchDragEvent(value) {
+		return {
+			preventDefault: function () {},
+			dataTransfer: { getData: function () { return value; }, setData: function () {}, dropEffect: "move" }
+		};
+	}
+
+	// Keyboard and screen readers. Every cell a respondent can act on is a
+	// focusable button that says what it holds; Enter or Space does what a
+	// click does. In drag-and-drop mode, selecting a chip (Enter, Space, a
+	// screen reader, a click or a tap) picks its label up and selecting a
+	// cell places it, so the grid can be answered without dragging.
+	var keyboardPick = null;
+	var keyboardPickChip = null;
+
+	function rowColText(key) {
+		var parts = key.slice(1).split("-c");
+		return "row " + parts[0] + ", column " + parts[1];
+	}
+
+	function describeCell(key) {
+		var text = rowColText(key) + ": ";
+		if (isExperimental) {
+			text += prefills[key] || "empty";
+			if (experimentalResponses[key]) text += ", reaction " + experimentalResponses[key];
+			else if (prefills[key]) text += ", no reaction yet";
+		} else {
+			text += assignments[key] || "empty";
+		}
+		return text.charAt(0).toUpperCase() + text.slice(1);
+	}
+
+	function cellIsActionable(key, isCenterCell, isBlockedCell) {
+		if (isCenterCell || isBlockedCell || selectionMode === "dropdown") return false;
+		if (isExperimental) return responseLabels.length > 0 && !!prefills[key];
+		return allowInteraction && categories.length > 0;
+	}
+
+	function refreshCellLabels() {
+		Object.keys(cellEls).forEach(function (k) {
+			if (cellEls[k].getAttribute("role") === "button") {
+				cellEls[k].setAttribute("aria-label", describeCell(k));
+			}
+		});
+	}
+
+	function placePickedLabel(cellRef) {
+		if (keyboardPick !== null && cellRef.ondrop) cellRef.ondrop(touchDragEvent(keyboardPick));
+	}
+
+	function makeCellAccessible(cellRef, key, isCenterCell, isBlockedCell) {
+		if (!cellIsActionable(key, isCenterCell, isBlockedCell)) return;
+		cellRef.tabIndex = 0;
+		cellRef.setAttribute("role", "button");
+		cellRef.setAttribute("aria-label", describeCell(key));
+		cellRef.addEventListener("keydown", function (e) {
+			// Keys pressed on the cell's own clear (×) button are that button's.
+			if (e.target !== cellRef) return;
+			if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+			e.preventDefault();
+			if (selectionMode === "dragdrop") {
+				placePickedLabel(cellRef);
+			} else if (cellRef.onclick) {
+				cellRef.onclick();
+			}
+		});
+		if (selectionMode === "dragdrop") {
+			// Screen readers activate a cell with a click. The × button stops
+			// its own clicks from reaching the cell.
+			var virtualPress = false;
+			cellRef.addEventListener("pointerdown", function (e) {
+				virtualPress = isVirtualPointer(e);
+			});
+			cellRef.addEventListener("click", function (e) {
+				var assistive = isAssistiveClick(e) || virtualPress;
+				virtualPress = false;
+				if (assistive) placePickedLabel(cellRef);
+			});
+		}
+	}
+
+	function enableKeyboardPick(chip, value) {
+		chip.setAttribute("aria-pressed", "false");
+		chip.setAttribute("aria-label", chip.textContent + ". Select it to pick it up, then select a cell to place it.");
+		// A button gets a click from Enter, Space and screen readers, so a key
+		// press cannot toggle twice. Mouse clicks and taps do nothing here.
+		chip.addEventListener("click", function (e) {
+			var assistive = isAssistiveClick(e) || chip.griddyVirtualPress === true;
+			chip.griddyVirtualPress = false;
+			if (!assistive) return;
+			var wasPicked = keyboardPickChip === chip;
+			if (keyboardPickChip) {
+				keyboardPickChip.setAttribute("aria-pressed", "false");
+				keyboardPickChip.style.outline = "";
+			}
+			keyboardPick = null;
+			keyboardPickChip = null;
+			if (wasPicked) return;
+			keyboardPick = value;
+			keyboardPickChip = chip;
+			chip.setAttribute("aria-pressed", "true");
+			chip.style.outline = "2px solid #8a2e3b";
+		});
+	}
+
+	// While a finger drags a label, the grid scrolls sideways (and the page up
+	// or down) when the finger is near an edge, faster the nearer it is, and
+	// keeps scrolling while the finger rests there. It starts only once the
+	// finger has moved, so pressing a chip near an edge does not scroll.
+	function edgeStep(distance) {
+		if (distance >= 40) return 0;
+		return Math.round(2 + 12 * (40 - Math.max(0, distance)) / 40);
+	}
+
+	function dragScroll() {
+		if (!touchDrag || !touchDrag.armed) return;
+		var x = touchDrag.x;
+		var y = touchDrag.y;
+		var view = scroller.getBoundingClientRect();
+		if (y > view.top && y < view.bottom) {
+			var leftStep = edgeStep(x - view.left);
+			var rightStep = edgeStep(view.right - x);
+			if (leftStep > 0) scroller.scrollLeft -= leftStep;
+			else if (rightStep > 0) scroller.scrollLeft += rightStep;
+		}
+		var upStep = edgeStep(y);
+		var downStep = edgeStep(window.innerHeight - y);
+		if (upStep > 0) window.scrollBy(0, -upStep);
+		else if (downStep > 0) window.scrollBy(0, downStep);
+	}
+
+	// Highlight the cell under the finger; scrolling can move a new cell under
+	// a finger that is not moving.
+	function dragHover() {
+		if (!touchDrag) return;
+		var target = cellUnder(touchDrag.x, touchDrag.y);
+		if (target !== touchDrag.over) {
+			if (touchDrag.over && touchDrag.over.ondragleave) touchDrag.over.ondragleave(touchDragEvent(touchDrag.value));
+			touchDrag.over = target;
+			if (target && target.ondragover) target.ondragover(touchDragEvent(touchDrag.value));
+		}
+	}
+
+	function dragTick() {
+		dragScroll();
+		dragHover();
+	}
+
+	// The edge arrows sit over the grid; during a finger drag they let the
+	// cell underneath receive the label.
+	function setEdgesPassThrough(on) {
+		[leftEdge, rightEdge].forEach(function (parts) {
+			parts.button.style.pointerEvents = on ? "none" : "auto";
+		});
+	}
+
+	function enableTouchDrag(chip, value, isResponse) {
+		chip.style.touchAction = "none";
+		chip.addEventListener("pointerdown", function (e) {
+			// A screen reader's tap picks the label up on the click that follows.
+			if (isVirtualPointer(e)) {
+				chip.griddyVirtualPress = true;
+				return;
+			}
+			if (e.pointerType === "mouse" || touchDrag) return;
+			e.preventDefault();
+			chip.draggable = false;
+			var ghost = chip.cloneNode(true);
+			ghost.style.position = "fixed";
+			ghost.style.left = (e.clientX - 20) + "px";
+			ghost.style.top = (e.clientY - 20) + "px";
+			ghost.style.pointerEvents = "none";
+			ghost.style.opacity = "0.85";
+			ghost.style.zIndex = "2147483647";
+			ghost.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)";
+			document.body.appendChild(ghost);
+			touchDrag = {
+				chip: chip,
+				ghost: ghost,
+				over: null,
+				value: value,
+				x: e.clientX,
+				y: e.clientY,
+				startX: e.clientX,
+				startY: e.clientY,
+				armed: false,
+				timer: null
+			};
+			touchDrag.timer = setInterval(dragTick, 16);
+			setEdgesPassThrough(true);
+			if (isResponse) draggedResponseLabel = value;
+			else draggedCategory = value;
+			if (typeof chip.setPointerCapture === "function") {
+				try { chip.setPointerCapture(e.pointerId); } catch (err) { /* already released */ }
+			}
+		});
+		chip.addEventListener("pointermove", function (e) {
+			if (!touchDrag || touchDrag.chip !== chip) return;
+			e.preventDefault();
+			touchDrag.ghost.style.left = (e.clientX - 20) + "px";
+			touchDrag.ghost.style.top = (e.clientY - 20) + "px";
+			touchDrag.x = e.clientX;
+			touchDrag.y = e.clientY;
+			if (Math.abs(e.clientX - touchDrag.startX) + Math.abs(e.clientY - touchDrag.startY) > 10) {
+				touchDrag.armed = true;
+			}
+			dragHover();
+		});
+		function finish(e, drop) {
+			if (!touchDrag || touchDrag.chip !== chip) return;
+			var state = touchDrag;
+			touchDrag = null;
+			clearInterval(state.timer);
+			setEdgesPassThrough(false);
+			if (state.ghost.parentNode) state.ghost.parentNode.removeChild(state.ghost);
+			chip.draggable = true;
+			var target = drop ? cellUnder(e.clientX, e.clientY) : null;
+			if (target && target.ondrop) {
+				target.ondrop(touchDragEvent(value));
+			} else if (state.over && state.over.ondragleave) {
+				state.over.ondragleave(touchDragEvent(value));
+			}
+			if (isResponse) draggedResponseLabel = null;
+			else draggedCategory = null;
+		}
+		chip.addEventListener("pointerup", function (e) { finish(e, true); });
+		chip.addEventListener("pointercancel", function (e) { finish(e, false); });
+		chip.addEventListener("lostpointercapture", function (e) { finish(e, false); });
+	}
+
+	var questionText = document.createElement(cfg.layout.questionText ? "p" : "div");
+	if (cfg.layout.questionText) {
+		questionText.textContent = cfg.layout.questionText;
+	} else {
+		// No question in GRIDDY: show the wording written in Qualtrics.
+		questionText.innerHTML = qualtricsQuestionHtml;
+	}
 	questionText.style.marginBottom = "8px";
 	questionText.style.fontFamily = "'Source Serif 4', serif";
 	questionText.style.fontSize = "17px";
@@ -831,7 +1351,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		toolbarLabel.textContent = "Placing:";
 		toolbarLabel.style.fontSize = "11px";
 		toolbarLabel.style.fontWeight = "600";
-		toolbarLabel.style.color = "#8a8170";
+		toolbarLabel.style.color = "#6b6455";
 		toolbar.appendChild(toolbarLabel);
 
 		categories.forEach(function (cat) {
@@ -840,12 +1360,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			var btn = document.createElement("button");
 			btn.type = "button";
 			btn.dataset.cat = cat;
+			btn.setAttribute("aria-pressed", cat === activeCategory ? "true" : "false");
 			btn.style.display = "inline-flex";
 			btn.style.alignItems = "center";
 			btn.style.gap = "4px";
 			btn.style.borderRadius = "9999px";
 			btn.style.border = cat === activeCategory ? "1px solid " + color : "1px solid #e2dccf";
-			btn.style.padding = "2px 8px";
+			btn.style.padding = "4px 10px";
 			btn.style.fontSize = "11px";
 			btn.style.backgroundColor = cat === activeCategory ? hexToRgba(color, 0.15) : "#fbf8f1";
 			btn.style.color = "#2a241c";
@@ -867,6 +1388,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					var otherMeta = getCategoryMeta(other.dataset.cat);
 					var otherColor = otherMeta.color || "#60a5fa";
 					var isActive = other.dataset.cat === cat;
+					other.setAttribute("aria-pressed", isActive ? "true" : "false");
 					other.style.backgroundColor = isActive ? hexToRgba(otherColor, 0.15) : "#fbf8f1";
 					other.style.borderColor = isActive ? otherColor : "#e2dccf";
 				});
@@ -886,10 +1408,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		dragHelp.style.marginBottom = "8px";
 
 		var dragLabel = document.createElement("span");
-		dragLabel.textContent = "Drag a label onto a cell:";
+		dragLabel.textContent = "Drag a label onto a cell, or select a label and then a cell:";
 		dragLabel.style.fontSize = "11px";
 		dragLabel.style.fontWeight = "600";
-		dragLabel.style.color = "#8a8170";
+		dragLabel.style.color = "#6b6455";
 		dragHelp.appendChild(dragLabel);
 
 		var dragTray = document.createElement("div");
@@ -918,7 +1440,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respToolbarLabel.textContent = "Reacting:";
 		respToolbarLabel.style.fontSize = "11px";
 		respToolbarLabel.style.fontWeight = "600";
-		respToolbarLabel.style.color = "#8a8170";
+		respToolbarLabel.style.color = "#6b6455";
 		respToolbar.appendChild(respToolbarLabel);
 
 		responseLabels.forEach(function (lbl) {
@@ -927,12 +1449,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			var btn = document.createElement("button");
 			btn.type = "button";
 			btn.dataset.resp = lbl;
+			btn.setAttribute("aria-pressed", lbl === activeResponseLabel ? "true" : "false");
 			btn.style.display = "inline-flex";
 			btn.style.alignItems = "center";
 			btn.style.gap = "4px";
 			btn.style.borderRadius = "9999px";
 			btn.style.border = lbl === activeResponseLabel ? "1px solid " + color : "1px solid #e2dccf";
-			btn.style.padding = "2px 8px";
+			btn.style.padding = "4px 10px";
 			btn.style.fontSize = "11px";
 			btn.style.backgroundColor = lbl === activeResponseLabel ? hexToRgba(color, 0.15) : "#fbf8f1";
 			btn.style.color = "#2a241c";
@@ -954,6 +1477,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					var otherMeta = getResponseMeta(other.dataset.resp);
 					var otherColor = otherMeta.color || "#8b5cf6";
 					var isActive = other.dataset.resp === lbl;
+					other.setAttribute("aria-pressed", isActive ? "true" : "false");
 					other.style.backgroundColor = isActive ? hexToRgba(otherColor, 0.15) : "#fbf8f1";
 					other.style.borderColor = isActive ? otherColor : "#e2dccf";
 				});
@@ -973,10 +1497,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respDragHelp.style.marginBottom = "8px";
 
 		var respDragLabel = document.createElement("span");
-		respDragLabel.textContent = "Drag a reaction onto a cell:";
+		respDragLabel.textContent = "Drag a reaction onto a cell, or select a reaction and then a cell:";
 		respDragLabel.style.fontSize = "11px";
 		respDragLabel.style.fontWeight = "600";
-		respDragLabel.style.color = "#8a8170";
+		respDragLabel.style.color = "#6b6455";
 		respDragHelp.appendChild(respDragLabel);
 
 		var respDragTray = document.createElement("div");
@@ -996,7 +1520,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var totalCellsCount = cfg.layout.rows * cfg.layout.cols;
 	var centerRowVal = cfg.layout.centerRow || Math.ceil(cfg.layout.rows / 2);
 	var centerColVal = cfg.layout.centerCol || Math.ceil(cfg.layout.cols / 2);
-	computePrefills(totalCellsCount, centerRowVal, centerColVal);
+	var centerKey = cfg.layout.includeCenterCell ? "r" + centerRowVal + "-c" + centerColVal : null;
+	if (!restoreSavedAnswers(centerRowVal, centerColVal)) {
+		computePrefills(totalCellsCount, centerRowVal, centerColVal);
+	}
 
 	var wrapper = document.createElement("div");
 	wrapper.style.width = cfg.tuning.previewWidth + "px";
@@ -1008,13 +1535,14 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	wrapper.style.position = "relative";
 
 	if (cfg.layout.backgroundImageUrl) {
-		wrapper.style.backgroundImage = "url('" + cfg.layout.backgroundImageUrl + "')";
+		wrapper.style.backgroundImage = cssUrl(cfg.layout.backgroundImageUrl);
 		wrapper.style.backgroundRepeat = "no-repeat";
 		wrapper.style.backgroundPosition = "center";
 		wrapper.style.backgroundSize = "contain";
 	}
 
 	var grid = document.createElement("div");
+	grid.setAttribute("data-griddy-grid", "");
 	grid.style.display = "grid";
 	grid.style.width = "100%";
 	grid.style.height = "100%";
@@ -1024,13 +1552,17 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	grid.style.gap = cfg.tuning.gridGap + "px";
 	grid.style.padding = cfg.tuning.gridPadding + "px";
 
+	// Text in cells keeps the survey's direction (right to left in Arabic or
+	// Hebrew, say) while the columns stay in their designed order.
+	var textDirection = (window.getComputedStyle && window.getComputedStyle(container).direction) || "ltr";
 	for (var i = 0; i < totalCellsCount; i++) {
 		var row = Math.floor(i / cfg.layout.cols) + 1;
 		var col = (i % cfg.layout.cols) + 1;
 		var isCenter = cfg.layout.includeCenterCell && row === centerRowVal && col === centerColVal;
 		var key = "r" + row + "-c" + col;
-		var isBlocked = !!blockedCells[key];
+		var isBlocked = !isCenter && !!blockedCells[key];
 		var cell = document.createElement("div");
+		cellEls[key] = cell;
 		cell.style.borderRadius = "0.375rem";
 		cell.style.border = "1px solid #e2dccf";
 		cell.style.minWidth = "0";
@@ -1038,6 +1570,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		cell.style.fontSize = "10px";
 		cell.style.fontWeight = "500";
 		cell.style.transition = "border-color 120ms ease, background-color 120ms ease";
+		cell.style.direction = textDirection;
 
 		renderCellWithDelete(cell, key, isCenter);
 
@@ -1086,8 +1619,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					}
 					if (dropped === "__CLEAR__") {
 						delete assignments[cellKey];
-					} else {
+					} else if (categories.indexOf(dropped) !== -1) {
 						assignments[cellKey] = dropped;
+					} else {
+						// Text dragged in from elsewhere is not an answer.
+						renderCellWithDelete(cellRef, cellKey, isCenterCell);
+						return;
 					}
 					persistAll();
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
@@ -1096,10 +1633,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 
 		if (isExperimental && responseLabels.length > 0 && selectionMode === "paint" && !isBlocked) {
-			cell.style.cursor = isCenter ? "default" : "pointer";
+			// Reactions belong on pre-filled cells only.
+			cell.style.cursor = isCenter || !prefills[key] ? "default" : "pointer";
 			(function (cellRef, cellKey, isCenterCell) {
 				cellRef.onclick = function () {
-					if (isCenterCell) return;
+					if (isCenterCell || !prefills[cellKey]) return;
 					if (!activeResponseLabel) return;
 					if (experimentalResponses[cellKey] === activeResponseLabel) {
 						delete experimentalResponses[cellKey];
@@ -1114,9 +1652,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 		if (isExperimental && responseLabels.length > 0 && selectionMode === "dragdrop" && !isBlocked) {
 			(function (cellRef, cellKey, isCenterCell) {
-				cellRef.style.cursor = isCenterCell ? "default" : "copy";
+				// Reactions belong on pre-filled cells only.
+				var acceptsReaction = !isCenterCell && !!prefills[cellKey];
+				cellRef.style.cursor = acceptsReaction ? "copy" : "default";
 				cellRef.ondragover = function (event) {
-					if (isCenterCell) return;
+					if (!acceptsReaction) return;
 					event.preventDefault();
 					if (event.dataTransfer) {
 						event.dataTransfer.dropEffect = "move";
@@ -1128,7 +1668,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
 				};
 				cellRef.ondrop = function (event) {
-					if (isCenterCell) return;
+					if (!acceptsReaction) return;
 					event.preventDefault();
 					var dropped = draggedResponseLabel;
 					if (!dropped && event.dataTransfer) {
@@ -1140,8 +1680,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					}
 					if (dropped === "__CLEAR_RESP__") {
 						delete experimentalResponses[cellKey];
-					} else {
+					} else if (responseLabels.indexOf(dropped) !== -1) {
 						experimentalResponses[cellKey] = dropped;
+					} else {
+						renderCellWithDelete(cellRef, cellKey, isCenterCell);
+						return;
 					}
 					persistAll();
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
@@ -1149,16 +1692,458 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			})(cell, key, isCenter);
 		}
 
+		makeCellAccessible(cell, key, isCenter, isBlocked);
 		grid.appendChild(cell);
 	}
 
 	wrapper.appendChild(grid);
-	container.appendChild(wrapper);
+
+	// The grid keeps the size the researcher designed on every screen. When the
+	// question area is narrower (a phone, or a very wide grid), the grid scrolls
+	// sideways inside this frame instead of shrinking, and a hint plus arrows at
+	// the edges show that part of it is off-screen.
+	var frame = document.createElement("div");
+	frame.setAttribute("data-griddy-frame", "");
+	frame.style.position = "relative";
+	frame.style.maxWidth = "100%";
+	// Column 1 stays on the left, as designed and over the same part of a
+	// background map, in right-to-left surveys too; the arrows rely on it.
+	frame.style.direction = "ltr";
+
+	var scroller = document.createElement("div");
+	scroller.setAttribute("data-griddy-scroller", "");
+	scroller.style.overflowX = "auto";
+	scroller.style.overflowY = "hidden";
+	scroller.style.maxWidth = "100%";
+	scroller.style.webkitOverflowScrolling = "touch";
+	scroller.appendChild(wrapper);
+	frame.appendChild(scroller);
+
+	var scrollHint = document.createElement("div");
+	scrollHint.setAttribute("data-griddy-scroll-hint", "");
+	scrollHint.textContent = "↔ Part of this grid is out of view. Scroll sideways to see all of it.";
+	scrollHint.style.display = "none";
+	scrollHint.style.margin = "0 0 6px";
+	scrollHint.style.fontSize = "12px";
+	scrollHint.style.fontWeight = "600";
+	scrollHint.style.color = "#8a2e3b";
+
+	function scrollGridBy(dx) {
+		if (typeof scroller.scrollBy === "function") {
+			try {
+				scroller.scrollBy({ left: dx, behavior: "smooth" });
+				return;
+			} catch (e) { /* older browsers jump instead */ }
+		}
+		scroller.scrollLeft += dx;
+	}
+
+	function makeEdge(side) {
+		var edge = document.createElement("div");
+		edge.setAttribute("data-griddy-edge", side);
+		edge.style.position = "absolute";
+		edge.style.top = "0";
+		edge.style.bottom = "0";
+		edge.style[side] = "0";
+		edge.style.width = "48px";
+		edge.style.display = "none";
+		edge.style.alignItems = "center";
+		edge.style.justifyContent = "center";
+		edge.style.pointerEvents = "none";
+		edge.style.zIndex = "30";
+		edge.style.background = "linear-gradient(to " + (side === "left" ? "right" : "left") + ", rgba(243,239,230,0.95), rgba(243,239,230,0))";
+		var btn = document.createElement("button");
+		btn.type = "button";
+		btn.textContent = side === "left" ? "‹" : "›";
+		btn.style.position = "relative";
+		btn.style.pointerEvents = "auto";
+		btn.style.width = "34px";
+		btn.style.height = "34px";
+		btn.style.borderRadius = "9999px";
+		btn.style.border = "none";
+		btn.style.backgroundColor = "rgba(42,36,28,0.78)";
+		btn.style.color = "#ffffff";
+		btn.style.fontFamily = "inherit";
+		btn.style.fontSize = "22px";
+		btn.style.lineHeight = "1";
+		btn.style.cursor = "pointer";
+		btn.onclick = function () {
+			var step = Math.max(80, Math.round(scroller.clientWidth * 0.8));
+			scrollGridBy(side === "left" ? -step : step);
+		};
+		var badge = document.createElement("span");
+		badge.style.position = "absolute";
+		badge.style.top = "-7px";
+		badge.style[side] = "-7px";
+		badge.style.minWidth = "18px";
+		badge.style.height = "18px";
+		badge.style.padding = "0 4px";
+		badge.style.boxSizing = "border-box";
+		badge.style.borderRadius = "9999px";
+		badge.style.border = "1px solid #c2410c";
+		badge.style.backgroundColor = "#ffffff";
+		badge.style.color = "#c2410c";
+		badge.style.fontSize = "11px";
+		badge.style.fontWeight = "700";
+		badge.style.lineHeight = "16px";
+		badge.style.textAlign = "center";
+		badge.style.display = "none";
+		btn.appendChild(badge);
+		edge.appendChild(btn);
+		frame.appendChild(edge);
+		return { side: side, edge: edge, button: btn, badge: badge };
+	}
+	var leftEdge = makeEdge("left");
+	var rightEdge = makeEdge("right");
+
+	// Cells the respondent is asked to fill: every open cell of a standard
+	// grid, or every pre-filled cell when they react to an experiment.
+	function fillableKeys() {
+		var keys = [];
+		Object.keys(cellEls).forEach(function (k) {
+			if (blockedCells[k] || k === centerKey) return;
+			if (isExperimental) {
+				if (responseLabels.length > 0 && prefills[k]) keys.push(k);
+			} else if (allowInteraction && categories.length > 0) {
+				keys.push(k);
+			}
+		});
+		return keys;
+	}
+
+	function unfilledKeys() {
+		return fillableKeys().filter(function (k) {
+			return isExperimental ? !experimentalResponses[k] : !assignments[k];
+		});
+	}
+
+	// How many of these cells sit mostly beyond the left or right edge.
+	function offscreenCounts(keys) {
+		var counts = { left: 0, right: 0 };
+		var view = scroller.getBoundingClientRect();
+		if (!(view.right > view.left)) return counts;
+		keys.forEach(function (k) {
+			var box = cellEls[k].getBoundingClientRect();
+			var middle = (box.left + box.right) / 2;
+			if (middle < view.left) counts.left++;
+			else if (middle > view.right) counts.right++;
+		});
+		return counts;
+	}
+
+	function setEdgeBadge(parts, emptyCount) {
+		parts.badge.textContent = emptyCount > 0 ? String(emptyCount) : "";
+		parts.badge.style.display = emptyCount > 0 ? "block" : "none";
+		parts.button.style.backgroundColor = emptyCount > 0 ? "#c2410c" : "rgba(42,36,28,0.78)";
+		parts.button.setAttribute(
+			"aria-label",
+			"Scroll the grid " + parts.side + (emptyCount > 0 ? " (" + emptyCount + (emptyCount === 1 ? " empty cell there)" : " empty cells there)") : "")
+		);
+	}
+
+	function updateIndicators() {
+		var overflow = scroller.scrollWidth - scroller.clientWidth > 1;
+		// Offer sideways scrolling only when the grid really is wider than the
+		// space; a rounding pixel would otherwise draw a needless scrollbar.
+		scroller.style.overflowX = overflow ? "auto" : "hidden";
+		var atStart = scroller.scrollLeft <= 1;
+		var atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
+		scrollHint.style.display = overflow ? "block" : "none";
+		leftEdge.edge.style.display = overflow && !atStart ? "flex" : "none";
+		rightEdge.edge.style.display = overflow && !atEnd ? "flex" : "none";
+		var hidden = reminderShown ? offscreenCounts(unfilledKeys()) : { left: 0, right: 0 };
+		setEdgeBadge(leftEdge, hidden.left);
+		setEdgeBadge(rightEdge, hidden.right);
+	}
 
 	var controls = document.createElement("div");
 	controls.style.marginTop = "10px";
 	controls.style.display = "flex";
 	controls.style.justifyContent = "flex-end";
+
+	// Shown when Next is pressed with cells still empty (unless the researcher
+	// chose "allow"). Empty cells get an orange outline, and the edge arrows
+	// count the empty cells that are off-screen.
+	var reminder = document.createElement("div");
+	reminder.setAttribute("data-griddy-reminder", "");
+	reminder.style.display = "none";
+	reminder.style.marginTop = "10px";
+	reminder.style.padding = "10px 12px";
+	reminder.style.border = "1px solid #f0c2a2";
+	reminder.style.borderRadius = "8px";
+	reminder.style.backgroundColor = "#fff4ec";
+	reminder.style.color = "#2a241c";
+	reminder.style.fontSize = "13px";
+	reminder.style.lineHeight = "1.4";
+	var reminderText = document.createElement("div");
+	reminder.appendChild(reminderText);
+	var reminderActions = document.createElement("div");
+	reminderActions.style.display = "flex";
+	reminderActions.style.flexWrap = "wrap";
+	reminderActions.style.justifyContent = "flex-end";
+	reminderActions.style.gap = "8px";
+	reminderActions.style.marginTop = "8px";
+	reminder.appendChild(reminderActions);
+
+	function makeActionButton(text, primary) {
+		var b = document.createElement("button");
+		b.type = "button";
+		b.textContent = text;
+		b.style.border = "1px solid " + (primary ? "#8a2e3b" : "#d9cfbf");
+		b.style.backgroundColor = primary ? "#8a2e3b" : "#ffffff";
+		b.style.color = primary ? "#ffffff" : "#2a241c";
+		b.style.borderRadius = "8px";
+		b.style.padding = "8px 12px";
+		b.style.fontFamily = "inherit";
+		b.style.fontSize = "12px";
+		b.style.fontWeight = "600";
+		b.style.cursor = "pointer";
+		reminderActions.appendChild(b);
+		return b;
+	}
+	var showMeBtn = makeActionButton("Show me", false);
+	var continueBtn = makeActionButton("Continue anyway", true);
+
+	function describeMissing(missing) {
+		var n = missing.length;
+		var them = n === 1 ? "it" : "them";
+		var off = offscreenCounts(missing);
+		var offCount = off.left + off.right;
+		var text = isExperimental
+			? (n === 1 ? "1 pre-filled cell has no reaction yet" : n + " pre-filled cells have no reaction yet")
+			: (n === 1 ? "1 cell is still empty" : n + " cells are still empty");
+		if (offCount > 0) {
+			if (offCount === n) {
+				text += n === 1 ? ", and it is off-screen" : ", all of them off-screen";
+			} else {
+				text += ", including " + offCount + " off-screen";
+			}
+		}
+		text += n === 1 ? ". It is outlined in orange." : ". They are outlined in orange.";
+		if (skipBehavior === "force") {
+			text += isExperimental
+				? " Please react to every outlined cell before continuing."
+				: " Please fill in every outlined cell before continuing.";
+		} else {
+			text += isExperimental
+				? " You can react to " + them + " now or continue anyway."
+				: " You can fill " + them + " in now or continue anyway.";
+		}
+		return text;
+	}
+
+	function refreshHighlights() {
+		var missing = {};
+		if (reminderShown) {
+			unfilledKeys().forEach(function (k) { missing[k] = true; });
+		}
+		Object.keys(cellEls).forEach(function (k) {
+			cellEls[k].style.outline = missing[k] ? "2px dashed #c2410c" : "";
+			cellEls[k].style.outlineOffset = missing[k] ? "-4px" : "";
+		});
+	}
+
+	function onAnswersChanged() {
+		var missing = unfilledKeys();
+		if (missing.length === 0) {
+			reminder.style.display = "none";
+		} else if (reminder.style.display !== "none") {
+			reminderText.textContent = describeMissing(missing);
+		}
+		refreshHighlights();
+		updateIndicators();
+	}
+
+	function revealCell(el) {
+		if (!el || typeof el.scrollIntoView !== "function") return;
+		try {
+			el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+		} catch (e) {
+			el.scrollIntoView();
+		}
+	}
+
+	function revealIfOutOfView(el) {
+		if (!el || typeof el.getBoundingClientRect !== "function") return;
+		var box = el.getBoundingClientRect();
+		var viewHeight = window.innerHeight || document.documentElement.clientHeight;
+		if (box.top < 0 || box.bottom > viewHeight) revealCell(el);
+	}
+
+	// The first of these cells the respondent cannot see (past an edge of the
+	// grid's frame or of the window), otherwise the first one.
+	function firstOutOfView(keys) {
+		var frameBox = scroller.getBoundingClientRect();
+		var viewHeight = window.innerHeight || document.documentElement.clientHeight;
+		for (var i = 0; i < keys.length; i++) {
+			var box = cellEls[keys[i]].getBoundingClientRect();
+			var middle = (box.left + box.right) / 2;
+			var sideways = frameBox.right > frameBox.left && (middle < frameBox.left || middle > frameBox.right);
+			var aboveOrBelow = box.bottom > box.top && (box.bottom < 0 || box.top > viewHeight);
+			if (sideways || aboveOrBelow) return keys[i];
+		}
+		return keys[0];
+	}
+
+	// True while the grid is on the page and not hidden; display logic can
+	// hide a question on its own page until another answer shows it.
+	function isDisplayed() {
+		if (!document.documentElement.contains(container)) return false;
+		for (var el = container; el && el.nodeType === 1; el = el.parentNode) {
+			if (window.getComputedStyle && window.getComputedStyle(el).display === "none") return false;
+		}
+		return true;
+	}
+
+	// Screen readers hear the reminder once each time Next is pressed, not
+	// again after every answer or scroll, which only update the visible text.
+	var reminderLive = document.createElement("div");
+	reminderLive.setAttribute("role", "alert");
+	reminderLive.setAttribute("data-griddy-announce", "");
+	reminderLive.style.position = "absolute";
+	reminderLive.style.width = "1px";
+	reminderLive.style.height = "1px";
+	reminderLive.style.overflow = "hidden";
+	reminderLive.style.clip = "rect(0 0 0 0)";
+	reminderLive.style.whiteSpace = "nowrap";
+
+	// What a screen reader says when Next finds empty cells: the count and
+	// what to do, without the visual details.
+	function announcement(missing) {
+		var n = missing.length;
+		var text = isExperimental
+			? (n === 1 ? "1 pre-filled cell has no reaction yet." : n + " pre-filled cells have no reaction yet.")
+			: (n === 1 ? "1 cell is still empty." : n + " cells are still empty.");
+		if (skipBehavior === "force") {
+			text += isExperimental
+				? " Please react to every pre-filled cell before continuing."
+				: " Please fill in every cell before continuing.";
+		} else {
+			text += " Use Show me to find " + (n === 1 ? "it" : "them") + ", or Continue anyway.";
+		}
+		return text;
+	}
+
+	function showReminder() {
+		var missing = unfilledKeys();
+		reminderShown = true;
+		reminderText.textContent = describeMissing(missing);
+		continueBtn.style.display = skipBehavior === "force" ? "none" : "inline-block";
+		reminder.style.display = "block";
+		reminderLive.textContent = "";
+		setTimeout(function () {
+			reminderLive.textContent = announcement(missing);
+		}, 50);
+		refreshHighlights();
+		updateIndicators();
+	}
+
+	// Record what this respondent was shown as soon as the grid is on screen,
+	// so a random pre-fill is saved even if they never react, and an untouched
+	// grid records an empty answer ("{}") instead of nothing. A grid hidden by
+	// display logic records nothing until it is shown, and drawing a grid
+	// never overwrites answers another grid saved under the same field names.
+	var recordedOnShow = false;
+	function recordWhenShown() {
+		if (recordedOnShow || !isDisplayed()) return;
+		recordedOnShow = true;
+		if (!fieldsOwnedElsewhere()) persistAll();
+	}
+
+	// Every GRIDDY grid on the page takes part in one check. The grid's Next
+	// appears under the last grid on screen that checks for empty cells, and
+	// it checks every grid on screen; each one with empty cells shows its own
+	// reminder. Qualtrics' own Next is hidden only while such a grid is on
+	// screen, so a page never ends up without a way forward.
+	var acknowledged = false;
+	var thisGrid = {
+		root: container,
+		question: question,
+		controls: controls,
+		reminder: reminder,
+		isShown: isDisplayed,
+		// Next records each grid's latest answers, except a grid that has not
+		// been answered while another question's answers fill its fields.
+		persist: function () {
+			if (!fieldsOwnedElsewhere()) persistAll();
+		},
+		showReminder: showReminder,
+		checks: function () {
+			return skipBehavior !== "allow" && fillableKeys().length > 0 && isDisplayed();
+		},
+		blocks: function () {
+			return thisGrid.checks() && unfilledKeys().length > 0 && (skipBehavior === "force" || !acknowledged);
+		}
+	};
+
+	function pageGrids() {
+		var list = (window.griddyPageGrids || []).filter(function (g) {
+			return document.documentElement.contains(g.root);
+		});
+		window.griddyPageGrids = list;
+		return list;
+	}
+	if (pageGrids().length === 0) window.griddyHidNext = false;
+	window.griddyPageGrids.push(thisGrid);
+	window.griddyNextOwner = question;
+
+	function syncPage() {
+		recordWhenShown();
+		var grids = pageGrids();
+		var last = null;
+		grids.forEach(function (g) {
+			if (!g.checks()) return;
+			// 4 means g comes after last on the page.
+			if (!last || (last.root.compareDocumentPosition(g.root) & 4)) last = g;
+		});
+		grids.forEach(function (g) {
+			g.controls.style.display = g === last ? "flex" : "none";
+		});
+		if (last) {
+			if (typeof last.question.hideNextButton === "function") last.question.hideNextButton();
+			window.griddyHidNext = true;
+		} else if (window.griddyHidNext) {
+			window.griddyHidNext = false;
+			if (typeof question.showNextButton === "function") question.showNextButton();
+		}
+	}
+
+	function tryNextPage() {
+		var grids = pageGrids();
+		var blocking = grids.filter(function (g) { return g.blocks(); });
+		if (blocking.length > 0) {
+			blocking.forEach(function (g) { g.showReminder(); });
+			revealIfOutOfView(blocking[0].reminder);
+			return;
+		}
+		grids.forEach(function (g) {
+			if (g.isShown()) g.persist();
+		});
+		question.clickNextButton();
+	}
+
+	showMeBtn.onclick = function () {
+		var missing = unfilledKeys();
+		if (missing.length === 0) return;
+		var target = cellEls[firstOutOfView(missing)];
+		revealCell(target);
+		var focusTarget = target.getAttribute("role") === "button" ? target : target.querySelector("select");
+		if (focusTarget && typeof focusTarget.focus === "function") {
+			try {
+				focusTarget.focus({ preventScroll: true });
+			} catch (e) {
+				focusTarget.focus();
+			}
+		}
+	};
+	continueBtn.onclick = function () {
+		acknowledged = true;
+		reminderShown = false;
+		reminder.style.display = "none";
+		refreshHighlights();
+		updateIndicators();
+		tryNextPage();
+	};
 
 	var nextBtn = document.createElement("button");
 	nextBtn.type = "button";
@@ -1168,21 +2153,55 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	nextBtn.style.color = "#ffffff";
 	nextBtn.style.borderRadius = "8px";
 	nextBtn.style.padding = "8px 12px";
+	nextBtn.style.fontFamily = "inherit";
 	nextBtn.style.fontSize = "12px";
 	nextBtn.style.fontWeight = "600";
 	nextBtn.style.cursor = "pointer";
 	nextBtn.onclick = function () {
-		question.clickNextButton();
+		tryNextPage();
 	};
 
 	controls.appendChild(nextBtn);
+	controls.style.display = "none";
+	container.appendChild(scrollHint);
+	container.appendChild(frame);
+	container.appendChild(reminder);
+	container.appendChild(reminderLive);
 	container.appendChild(controls);
+
+	scroller.addEventListener("scroll", function () {
+		updateIndicators();
+		if (reminderShown && reminder.style.display !== "none") {
+			var missing = unfilledKeys();
+			if (missing.length > 0) reminderText.textContent = describeMissing(missing);
+		}
+	});
+	// Resizing, and display logic showing or hiding the grid, can change
+	// what is on screen.
+	function onLayoutChange() {
+		updateIndicators();
+		syncPage();
+	}
+	window.addEventListener("resize", onLayoutChange);
+	if (typeof ResizeObserver === "function") {
+		var layoutObserver = new ResizeObserver(onLayoutChange);
+		layoutObserver.observe(scroller);
+		layoutObserver.observe(container);
+	}
+	updateIndicators();
+	syncPage();
+	setTimeout(onLayoutChange, 400);
 });
 
 Qualtrics.SurveyEngine.addOnUnload(function()
 {
-	/* Optional: code to run when the page is unloaded */
-
+	// Leave Qualtrics' Next button showing for the next page if a grid here
+	// hid it.
+	var owner = window.griddyNextOwner;
+	if (window.griddyHidNext && owner && typeof owner.showNextButton === "function") {
+		owner.showNextButton();
+	}
+	window.griddyHidNext = false;
 });`;
 }
 
@@ -1190,7 +2209,7 @@ Qualtrics.SurveyEngine.addOnUnload(function()
  * QSF (Qualtrics Survey Format) export
  *
  * A .qsf file is a JSON document Qualtrics can import directly via
- * Projects -> Create project -> Survey -> "From a file". Importing it
+ * Create a new project -> Survey -> Get started -> "Import a QSF file". Importing it
  * builds the whole survey for the researcher: one Text/Graphic question
  * per grid (with the rendering JavaScript already attached), every
  * embedded-data field pre-declared in the Survey Flow, and each grid on
@@ -1207,6 +2226,14 @@ export interface QualtricsQsfItem {
   prefillsField?: string;
   /** Experimental-mode response field. Defaults to "GridResponses". */
   responsesField?: string;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function isExperimentalConfig(config: GridConfig): boolean {
@@ -1295,8 +2322,14 @@ export function buildQualtricsQsf(
         })
       : buildQualtricsSnippet(item.config, { embeddedDataField: fields[0] });
 
+    // The grid script draws the question itself. Qualtrics shows QuestionText
+    // (HTML) in its builder and for a moment before the script runs, so the
+    // researcher's text is escaped. When GRIDDY's question is blank it stays
+    // blank, so the question can be written in Qualtrics instead (the script
+    // keeps it); the title still names the question in the builder.
     const questionText =
       item.config.layout.questionText || item.title || `Grid question ${index + 1}`;
+    const questionHtml = escapeHtml(item.config.layout.questionText || "");
 
     questionElements.push({
       SurveyID: surveyId,
@@ -1305,7 +2338,7 @@ export function buildQualtricsQsf(
       SecondaryAttribute: questionText,
       TertiaryAttribute: null,
       Payload: {
-        QuestionText: questionText,
+        QuestionText: questionHtml,
         DefaultChoices: false,
         DataExportTag: `Q${index + 1}`,
         QuestionType: "DB",
@@ -1532,7 +2565,7 @@ export function buildQualtricsQsfForConfig(
 ): string {
   const name = surveyName || config.name || "GRIDDY Survey";
   return buildQualtricsQsf(
-    [{ title: config.name || name, config }],
+    [{ title: config.name || name, config, ...singleGridFieldNames(config) }],
     name,
   );
 }

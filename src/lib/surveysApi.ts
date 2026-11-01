@@ -24,8 +24,33 @@ export interface SurveysExportFile {
 }
 
 export interface ImportSurveysResult {
+  /** Surveys that were not in this browser before. */
   importedCount: number;
+  /** Surveys already here that the backup had a newer version of. */
+  updatedCount: number;
+  /** Surveys already here whose local copy was newer than the backup's, so it was kept. */
+  keptNewerCount: number;
   skippedDuplicateCount: number;
+}
+
+/** One sentence telling the researcher what an import did. */
+export function describeImport(result: ImportSurveysResult): string {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const parts: string[] = [];
+  if (result.importedCount) parts.push(`imported ${plural(result.importedCount, "survey")}`);
+  if (result.updatedCount) {
+    parts.push(`updated ${plural(result.updatedCount, "survey")} with newer versions from the backup`);
+  }
+  if (result.keptNewerCount) {
+    parts.push(`kept your newer copy of ${plural(result.keptNewerCount, "survey")}`);
+  }
+  if (result.skippedDuplicateCount) {
+    parts.push(`skipped ${plural(result.skippedDuplicateCount, "duplicate")}`);
+  }
+  if (parts.length === 0) return "Backup imported, but it did not contain any surveys.";
+  const last = parts.pop()!;
+  const text = parts.length ? `${parts.join(", ")} and ${last}` : last;
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
 function readLocalSurveys(): ExportedSurvey[] {
@@ -54,9 +79,20 @@ function readLocalSurveys(): ExportedSurvey[] {
   }
 }
 
+export const STORAGE_FULL_MESSAGE =
+  "This browser's storage for GRIDDY is full, so nothing was saved. Uploaded images take the most space: export a JSON backup from My surveys, then delete surveys you no longer need or use smaller images.";
+
 function writeLocalSurveys(surveys: ExportedSurvey[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_SURVEYS_STORAGE_KEY, JSON.stringify(surveys));
+  try {
+    window.localStorage.setItem(LOCAL_SURVEYS_STORAGE_KEY, JSON.stringify(surveys));
+  } catch (e) {
+    const name = (e as { name?: string }).name;
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
+      throw new Error(STORAGE_FULL_MESSAGE);
+    }
+    throw e;
+  }
 }
 
 export function stableStringify(value: unknown): string {
@@ -151,7 +187,7 @@ export async function importSurveys(
   surveys: ExportedSurvey[],
 ): Promise<ImportSurveysResult> {
   if (surveys.length === 0) {
-    return { importedCount: 0, skippedDuplicateCount: 0 };
+    return { importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 0 };
   }
 
   const existingSurveys = readLocalSurveys();
@@ -167,6 +203,8 @@ export async function importSurveys(
   const seenInImport = new Set<string>();
   const nextById = new Map(existingSurveys.map((survey) => [survey.id, survey]));
   let importedCount = 0;
+  let updatedCount = 0;
+  let keptNewerCount = 0;
   let skippedDuplicateCount = 0;
 
   for (const survey of surveys) {
@@ -183,6 +221,23 @@ export async function importSurveys(
       continue;
     }
 
+    // The same survey with different content: keep whichever copy was
+    // edited last, so restoring an old backup cannot overwrite newer work.
+    const local = nextById.get(survey.id);
+    if (local) {
+      const localTime = Date.parse(local.updated_at) || 0;
+      const backupTime = Date.parse(survey.updated_at) || 0;
+      if (localTime >= backupTime) {
+        keptNewerCount++;
+        continue;
+      }
+      nextById.set(survey.id, survey);
+      existingById.set(survey.id, fp);
+      existingFingerprints.add(fp);
+      updatedCount++;
+      continue;
+    }
+
     if (!existingById.has(survey.id) && existingFingerprints.has(fp)) {
       skippedDuplicateCount++;
       continue;
@@ -195,5 +250,5 @@ export async function importSurveys(
   }
 
   writeLocalSurveys(Array.from(nextById.values()));
-  return { importedCount, skippedDuplicateCount };
+  return { importedCount, updatedCount, keptNewerCount, skippedDuplicateCount };
 }
