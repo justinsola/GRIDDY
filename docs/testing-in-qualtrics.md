@@ -172,14 +172,15 @@ locally, and reports what differed. Learned on the first runs:
 Found by this process and not yet fixed. Remove an entry when its fix is on
 `main` and a re-run confirms it.
 
-1. **The grid overflows on phones.** Cells use fixed pixel sizes (`cellWidth`
-   100 and `cellHeight` 120 by default, `gridGap` 10), so a 4-column grid is
-   about 430 px wide and Qualtrics' mobile view cuts off the third and
-   fourth columns. Fix in the exported script, and in `PreviewPanel.tsx` so
-   the preview matches: let the grid shrink to its container (`max-width:
-   100%`, columns `minmax(0, 1fr)`, cells with `aspect-ratio`), or scale
-   the cell sizes down when the container is narrower than the grid. Found
-   by run 1.
+1. **The grid overflows on phones.** The exported script gives the grid
+   wrapper a fixed size, `previewWidth` by `previewHeight` pixels (550 by
+   550 by default; `src/lib/qualtricsExport.ts` near line 1002 and again
+   near line 1904 in the multi-step script), so on a phone the box is wider
+   than the question and Qualtrics' mobile view cuts off the right-hand
+   columns. The columns themselves are already flexible (`minmax(0, 1fr)`).
+   Fix: cap the wrapper at the container (`max-width: 100%`) and derive its
+   height from the aspect ratio instead of a fixed pixel height, and mirror
+   the change in `PreviewPanel.tsx` so the preview matches. Found by run 1.
 2. **Reactions can be placed on empty cells in experimental mode.** The
    reaction handlers only skip the centre cell and blocked cells
    (`src/lib/qualtricsExport.ts` near lines 1101, 1130 and 493), so a
