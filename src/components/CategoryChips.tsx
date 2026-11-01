@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { LayerMode } from "../grid-types";
 import ImageInput from "./ImageInput";
 
@@ -43,9 +43,16 @@ export const CategoryChips: React.FC<Props> = ({
   // two, and two labels with the same name would share one colour, image and
   // set of cells. While the typed name is unusable it stays a draft (with a
   // note) and the label keeps its last good name.
-  const [draft, setDraft] = useState<{ index: number; name: string; problem: string } | null>(null);
+  const [draft, setDraft] = useState<
+    { index: number; name: string; problem: string; clash: boolean } | null
+  >(null);
   const draftName = draft && draft.index === openIndex ? draft.name : null;
   const nameProblem = draft && draft.index === openIndex ? draft.problem : "";
+  // Every keystroke that does not clash is saved, so typing "Family" over
+  // "Friends" saves "F" up to "Famil" before "Family" is refused. Leaving the
+  // field on a clash puts back the name the label had when the field gained
+  // focus.
+  const nameAtFocus = useRef<{ index: number; name: string } | null>(null);
 
   const renameOpen = (typed: string) => {
     if (openIndex == null) return;
@@ -58,7 +65,7 @@ export const CategoryChips: React.FC<Props> = ({
       : name !== typed
         ? "Names can't contain commas."
         : "";
-    setDraft({ index: openIndex, name, problem });
+    setDraft({ index: openIndex, name, problem, clash });
     if (!clash) update(openIndex, { name });
   };
 
@@ -165,13 +172,24 @@ export const CategoryChips: React.FC<Props> = ({
                 type="text"
                 value={draftName ?? open.name}
                 onChange={(e) => renameOpen(e.target.value)}
+                onFocus={() => {
+                  nameAtFocus.current = { index: openIndex, name: open.name };
+                }}
                 onBlur={() => {
-                  // Spaces at either end would make the name differ from the
-                  // trimmed one used in the export; drop them when done typing.
-                  const typed = draftName ?? open.name;
-                  const trimmed = typed.trim();
-                  const clash = items.some((it, i) => i !== openIndex && it.name.trim() === trimmed);
-                  if (trimmed !== typed && !clash) update(openIndex, { name: trimmed });
+                  const before = nameAtFocus.current;
+                  nameAtFocus.current = null;
+                  if (draft && draft.index === openIndex && draft.clash) {
+                    if (before && before.index === openIndex && before.name !== open.name) {
+                      update(openIndex, { name: before.name });
+                    }
+                  } else {
+                    // Spaces at either end would make the name differ from the
+                    // trimmed one used in the export; drop them when done typing.
+                    const typed = draftName ?? open.name;
+                    const trimmed = typed.trim();
+                    const clash = items.some((it, i) => i !== openIndex && it.name.trim() === trimmed);
+                    if (trimmed !== typed && !clash) update(openIndex, { name: trimmed });
+                  }
                   setDraft(null);
                 }}
                 className="rounded-lg border border-hairline bg-white px-3 py-2.5 font-serif text-[15px] text-ink focus:border-accent focus:outline-none"

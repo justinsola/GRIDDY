@@ -30,7 +30,7 @@ const STEPS: Step[] = [
   {
     target: '[data-tour="preview"]',
     title: "Live preview",
-    content: "This preview updates as you edit. Switch to Respondent preview to try the grid exactly as respondents will; clicks here are not saved or exported.",
+    content: "This preview updates as you edit. Clicks in the design preview only try the grid, except Block cells and painting an experiment's pre-fills, which change the survey. Respondent preview runs the exported grid, scaled to fit this panel.",
     placement: "left",
   },
   {

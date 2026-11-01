@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import CategoryChips, { ChipItem } from "./CategoryChips";
@@ -57,6 +57,51 @@ it("keeps commas out of label names", () => {
     { name: "Mom Dad", color: "#00ff00" },
   ]);
   expect(host.textContent).toContain("Names can't contain commas.");
+});
+
+// Feeds each change back in, as the editor does, so the chips show what was saved.
+function SavedLabels({ initial, onChange }: { initial: ChipItem[]; onChange: (items: ChipItem[]) => void }) {
+  const [list, setList] = useState(initial);
+  return (
+    <CategoryChips
+      items={list}
+      onChange={(next) => {
+        onChange(next);
+        setList(next);
+      }}
+    />
+  );
+}
+
+it("puts the old name back when the field is left on another label's name", () => {
+  const onChange = vi.fn();
+  act(() => root.render(<SavedLabels initial={items} onChange={onChange} />));
+  const chipNames = () =>
+    Array.from(host.querySelectorAll("button"))
+      .filter((b) => b.textContent?.endsWith("×"))
+      .map((b) => b.textContent!.slice(0, -1));
+  act(() => Array.from(host.querySelectorAll("button")).find((b) => b.textContent === "Friends×")!.click());
+  const input = host.querySelector<HTMLInputElement>('input[type="text"]')!;
+  act(() => {
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  });
+
+  // Typed one letter at a time: each shorter name is free, so each is saved.
+  for (let n = 1; n <= "Family".length; n++) type(input, "Family".slice(0, n));
+  expect(onChange.mock.calls.map(([next]) => next[1].name)).toEqual(["F", "Fa", "Fam", "Fami", "Famil"]);
+  expect(chipNames()).toEqual(["Family", "Famil"]);
+  expect(host.textContent).toContain('Another label is already called "Family"');
+
+  act(() => {
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
+  expect(onChange).toHaveBeenLastCalledWith([
+    { name: "Family", color: "#ff0000" },
+    { name: "Friends", color: "#00ff00" },
+  ]);
+  expect(chipNames()).toEqual(["Family", "Friends"]);
+  expect(input.value).toBe("Friends");
+  expect(host.textContent).not.toContain("Another label is already called");
 });
 
 it("drops spaces at the ends of a name when the field is left", () => {

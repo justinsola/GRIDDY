@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
+import { MISSING_TITLE_MESSAGE, saveEditorSurvey } from "../lib/saveEditorSurvey";
 import { findFieldCollision } from "../lib/combineFields";
 import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
 import {
@@ -55,6 +56,9 @@ function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
     .join(" and ");
 }
 
+export const EDITOR_NAME_MISSING =
+  "The survey open in the editor has no name. Name it there first, or use the saved version instead.";
+
 function makeQsfFileName() {
   const iso = new Date().toISOString().replace(/[:.]/g, "-");
   return `griddy-qualtrics-${iso}.qsf`;
@@ -62,7 +66,7 @@ function makeQsfFileName() {
 
 export default function CombineSurveysPage() {
   const navigate = useNavigate();
-  const { state: editorState } = useEditor();
+  const { state: editorState, dispatch } = useEditor();
   const [surveys, setSurveys] = useState<ExportedSurvey[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [fieldOverrides, setFieldOverrides] = useState<Record<string, string>>({});
@@ -71,6 +75,9 @@ export default function CombineSurveysPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [savingEditor, setSavingEditor] = useState(false);
+  // Surveys to download as saved, leaving out the editor's unsaved changes.
+  const [savedCopyIds, setSavedCopyIds] = useState<string[]>([]);
 
   useEffect(() => {
     setFetching(true);
@@ -129,9 +136,31 @@ export default function CombineSurveysPage() {
   // editor that were never saved, the download would ship the old version.
   const unsavedEditsError = useMemo(() => {
     const open = ordered.find((survey) => survey.id === editorState.config.id);
-    if (!open || !hasUnsavedChanges(editorState)) return null;
-    return `"${open.name}" has changes in the editor that are not saved. Save it there first, so this survey uses the version you see.`;
-  }, [ordered, editorState]);
+    if (!open || savedCopyIds.includes(open.id) || !hasUnsavedChanges(editorState)) return null;
+    return `"${open.name}" has changes in the editor that are not saved. Choose which version this survey uses.`;
+  }, [ordered, editorState, savedCopyIds]);
+
+  // Saving from here keeps the questions, field names and title chosen on
+  // this page, which leaving for the editor would reset.
+  const saveEditorChanges = async () => {
+    setSavingEditor(true);
+    setError(null);
+    try {
+      // Reload the list before the editor counts as saved, so Download never
+      // turns on while the list still holds the old copy.
+      await saveEditorSurvey(
+        editorState.config,
+        () => dispatch({ type: "markSaved" }),
+        async () => setSurveys((await exportSurveys()).surveys),
+      );
+    } catch (e) {
+      const message = (e as Error).message;
+      // This page has its own survey name box; say which name is missing.
+      setError(message === MISSING_TITLE_MESSAGE ? EDITOR_NAME_MISSING : message);
+    } finally {
+      setSavingEditor(false);
+    }
+  };
 
   const defaultTitle = `GRIDDY Survey (${ordered.length} grid${ordered.length === 1 ? "" : "s"})`;
 
@@ -336,7 +365,24 @@ export default function CombineSurveysPage() {
           )}
 
           {unsavedEditsError && (
-            <p className="mt-3 text-sm font-semibold text-accent">{unsavedEditsError}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="text-sm font-semibold text-accent">{unsavedEditsError}</p>
+              <button
+                type="button"
+                onClick={saveEditorChanges}
+                disabled={savingEditor}
+                className="rounded-md bg-accent-tint px-3 py-1.5 text-sm font-semibold text-accent hover:opacity-90 disabled:opacity-50"
+              >
+                {savingEditor ? "Saving…" : "Save the editor's changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSavedCopyIds((prev) => [...prev, editorState.config.id])}
+                className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
+              >
+                Use the saved version instead
+              </button>
+            </div>
           )}
           {fieldCollisionError && (
             <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>

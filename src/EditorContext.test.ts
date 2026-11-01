@@ -409,7 +409,11 @@ describe("unsaved changes", () => {
   });
 
   it("counts a renamed survey as an unsaved edit", () => {
-    const state = makeState();
+    // Start from a config normalizeConfig leaves as it is, so that only the
+    // rename can make the survey differ from its snapshot.
+    const state = makeState(normalizeConfig(makeBaseConfig()));
+    const unchanged = editorReducer(state, { type: "setConfig", config: state.config });
+    expect(hasUnsavedChanges(unchanged)).toBe(false);
     const renamed = editorReducer(state, {
       type: "setConfig",
       config: { ...state.config, name: "Renamed" },
