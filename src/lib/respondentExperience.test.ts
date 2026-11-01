@@ -401,6 +401,17 @@ describe("drag and drop on touch screens", () => {
   });
 });
 
+describe("fonts and long labels", () => {
+  it("makes buttons and selects use the grid's font and lets long words wrap", () => {
+    const r = run(makeConfig());
+    const styles = document.getElementById("griddy-styles");
+    expect(styles?.textContent).toContain("font-family: inherit");
+    expect(styles?.textContent).toContain("overflow-wrap: anywhere");
+    expect(r.container.hasAttribute("data-griddy-root")).toBe(true);
+    expect(r.container.querySelector("[data-griddy-grid]")).not.toBeNull();
+  });
+});
+
 describe("image URLs", () => {
   it("keeps a background image whose URL contains an apostrophe", () => {
     const base = makeConfig();

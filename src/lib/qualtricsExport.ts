@@ -96,6 +96,17 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		document.head.appendChild(fontLink);
 	}
 
+	// Buttons and selects do not inherit the page font by default, and a long
+	// word in a narrow cell should wrap rather than be cut off mid-word. Text
+	// keeps its designed size either way.
+	if (!document.getElementById("griddy-styles")) {
+		var griddyStyles = document.createElement("style");
+		griddyStyles.id = "griddy-styles";
+		griddyStyles.textContent = "[data-griddy-root] button, [data-griddy-root] select { font-family: inherit; } [data-griddy-grid] div { overflow-wrap: anywhere; }";
+		document.head.appendChild(griddyStyles);
+	}
+	container.setAttribute("data-griddy-root", "");
+
 	var cfg = ${cfgJson};
 	var surveyCfg = cfg.survey || {};
 	var categories = [];
@@ -1239,6 +1250,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	var grid = document.createElement("div");
+	grid.setAttribute("data-griddy-grid", "");
 	grid.style.display = "grid";
 	grid.style.width = "100%";
 	grid.style.height = "100%";
