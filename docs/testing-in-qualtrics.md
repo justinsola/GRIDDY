@@ -113,9 +113,9 @@ Record anything that differs from the GRIDDY preview, however small.
 ## Part E: check the outputs
 
 1. In the Qualtrics project, open **Data & Analysis**. Preview responses are
-   recorded with the status "Survey Preview"; if the table is empty, change
-   the filter to include preview responses.
-2. Open the response and read the `GridAssignments` column. It must be a
+   recorded; the table can take a minute to show a new one, so reload it.
+   Add the `GridAssignments` column with **Column chooser → Embedded Data**.
+2. Read the `GridAssignments` value for the response. It must be a
    JSON object whose keys are the painted cells in `r{row}-c{col}` form and
    whose values are the category names exactly as typed, for example
    `{"r1-c1":"Family","r1-c2":"Family","r3-c4":"Mom's friends"}`. A cell
@@ -151,15 +151,48 @@ Run the one that matches what changed:
 ## Running it with Claude
 
 In a Claude Code session with Claude in Chrome connected and Chrome signed
-in to Qualtrics, ask for: "Run docs/testing-in-qualtrics.md end to end with
-the standard design, run the validator on the download, and add a row to the
-findings log." Claude drives the GRIDDY app and Qualtrics in Chrome, runs
-`scripts/check-qsf.mjs` locally, and reports what differed. Qualtrics
-projects created by test runs are named `E2E test <date>`; delete them when
-the run is over.
+in to Qualtrics (the UNC brand lives at unc.pdx1.qualtrics.com), ask for:
+"Run docs/testing-in-qualtrics.md end to end with the standard design, run
+the validator on the download, and add a row to the findings log." Claude
+drives the GRIDDY app and Qualtrics in Chrome, runs `scripts/check-qsf.mjs`
+locally, and reports what differed. Learned on the first runs:
+
+- Click **Download .qsf** by screen coordinates, not by element reference;
+  a reference click does not start the download in Chrome.
+- Chrome's file-upload tool can only read files inside the session's own
+  folder, so copy the download there before Part C.
+- Preview responses appear in Data & Analysis about a minute after the
+  survey ends. Reload the page, then add the embedded-data columns with
+  **Column chooser → Embedded Data**.
+- Qualtrics projects created by test runs are named `E2E test <date>` or
+  `E2E <variation> <date>`; delete them when the run is over.
+
+## Open defects
+
+Found by this process and not yet fixed. Remove an entry when its fix is on
+`main` and a re-run confirms it.
+
+1. **The grid overflows on phones.** Cells use fixed pixel sizes (`cellWidth`
+   100 and `cellHeight` 120 by default, `gridGap` 10), so a 4-column grid is
+   about 430 px wide and Qualtrics' mobile view cuts off the third and
+   fourth columns. Fix in the exported script, and in `PreviewPanel.tsx` so
+   the preview matches: let the grid shrink to its container (`max-width:
+   100%`, columns `minmax(0, 1fr)`, cells with `aspect-ratio`), or scale
+   the cell sizes down when the container is narrower than the grid. Found
+   by run 1.
+2. **Reactions can be placed on empty cells in experimental mode.** The
+   reaction handlers only skip the centre cell and blocked cells
+   (`src/lib/qualtricsExport.ts` near lines 1101, 1130 and 493), so a
+   respondent can react to a cell that shows "—", and `GridResponses` then
+   holds keys that `GridPrefills` does not. The editor says reactions go on
+   pre-filled cells. Fix: return early when `prefills[cellKey]` is empty, in
+   all three input modes. Found by run 2.
+3. **The export dialog does not close on Escape**, only on its Close button
+   (minor). Found by run 1.
 
 ## Findings log
 
 | Date | Parts run | Result | Notes |
 | --- | --- | --- | --- |
-| 2026-11-01 | A, B | Pass | Standard design built in the live app and exported; the validator confirmed the file matched the design (25 checks). The respondent preview drew the 3 × 4 grid with "Your House" in row 2, column 2 and all five categories. Small UI note: the export dialog does not close on Escape, only on its Close button. Parts C to E not run yet: Claude in Chrome was not connected during the session. |
+| 2026-11-01 | A to E, standard design | Pass, 1 defect | Built, saved and exported in the live app; validator 25 checks clean. Imported into Qualtrics (project `E2E test 2026-11-01`, survey SV_bK09zSoXw1K73LM) with the JS marker and the Survey Flow field in place. Desktop preview matched GRIDDY's preview; painting, clearing and the inert centre cell behaved; no console errors; the grid's Next button finished the survey. Recorded `GridAssignments` was exactly `{"r1-c1":"Family","r3-c4":"Mom's friends"}`. Mobile view cut off columns 3 and 4 (defect 1). CSV export not tried. |
+| 2026-11-01 | A to E, experiment variation (fixed prefills on two cells, one barrier, default reaction labels) | Pass, 1 defect | Validator 24 checks clean. Imported as `E2E experimental 2026-11-01` (SV_5o4hWngBmygOPb0); Survey Flow declared both fields. Preview (on Qualtrics' newer "jfe6" preview engine) showed the prefills, the "—" placeholders and the blocked cell; the blocked cell ignored clicks. Recorded `GridPrefills` `{"r1-c1":"Family","r1-c2":"Friends"}` and `GridResponses` `{"r1-c1":"Agree","r1-c2":"Disagree","r1-c3":"Disagree"}`: the last key is defect 2. |

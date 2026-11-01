@@ -52,7 +52,7 @@ changes; it is the one place that says where the project stands._
 
 ## Known gaps
 
-- No end-to-end check inside Qualtrics was on record before November 2026. `docs/testing-in-qualtrics.md` is the process that closes this gap; its findings log records what each run found.
+- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run for the first time on 1 November 2026 and works for the standard and experimental designs. `docs/testing-in-qualtrics.md` is the process; its "Open defects" section lists what the runs found, currently: the grid overflows on phones, reactions can land on empty cells in experimental mode, and the export dialog ignores Escape.
 - Tests are unit tests only (export builders, reducer, storage, preview panel). Nothing drives the real UI automatically.
 - The app page has no `description` or social-preview meta tags.
 - Page 7 of the documentation PDF is half blank (cosmetic).

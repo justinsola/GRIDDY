@@ -237,6 +237,18 @@ questions.forEach((q, index) => {
       dataUrls.length ? `${dataUrls.length} embedded image(s), ${kb(dataUrls.reduce((s, u) => s + u.length, 0))}` : "no embedded images",
     ].join("; ");
     info(`${stepLabel}: ${summary}`);
+    if (argv.includes("--dump")) {
+      const dump = {
+        blockedCells: layout.blockedCells ?? {},
+        barriersCsv: layout.barriersCsv ?? "",
+        centerRow: layout.centerRow ?? null,
+        centerCol: layout.centerCol ?? null,
+        experimental: exp?.enabled
+          ? { prefillMode: exp.prefillMode, fixedAssignments: exp.fixedAssignments, weightedEntries: exp.weightedEntries, responseLabelsCsv: exp.responseLabelsCsv }
+          : null,
+      };
+      info(`${stepLabel}: config ${JSON.stringify(dump)}`);
+    }
     summaries.push({ q: n, layout, survey, exp, cats });
   });
 });
