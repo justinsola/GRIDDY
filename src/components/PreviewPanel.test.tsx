@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { EditorProvider } from "../EditorContext";
+import ConfigPanel from "./ConfigPanel";
 import PreviewPanel from "./PreviewPanel";
 import RespondentPreview from "./RespondentPreview";
 
@@ -55,4 +56,19 @@ it("closes the export dialog with Escape", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("leaves block-cells mode when the researcher picks a category to place", () => {
+  act(() => root.render(<EditorProvider><ConfigPanel /><PreviewPanel /></EditorProvider>));
+  const buttonByText = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((button) => button.textContent === text)!;
+  act(() => buttonByText("+ Add barrier").click());
+  act(() => buttonByText("Block cells").click());
+  expect(buttonByText("Done blocking")).toBeDefined();
+  const familyChips = Array.from(host.querySelectorAll("button")).filter(
+    (button) => button.textContent?.trim() === "Family",
+  );
+  act(() => familyChips[familyChips.length - 1].click());
+  expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "Done blocking")).toBe(false);
+  expect(buttonByText("Block cells")).toBeDefined();
 });

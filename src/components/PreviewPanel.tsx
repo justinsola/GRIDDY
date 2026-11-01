@@ -504,7 +504,11 @@ export const PreviewPanel: React.FC = () => {
                   <button
                     key={item}
                     type="button"
-                    onClick={() => setActiveCategory(item)}
+                    onClick={() => {
+                      // Picking a category means placing it, so leave block-cells mode.
+                      setActiveCategory(item);
+                      setBlockEditMode(false);
+                    }}
                     className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
                       isActive
                         ? "shadow-sm"
