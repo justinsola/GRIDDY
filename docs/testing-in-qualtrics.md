@@ -162,4 +162,4 @@ the run is over.
 
 | Date | Parts run | Result | Notes |
 | --- | --- | --- | --- |
-| 2026-11-01 | A, B | Pass | Standard design built in the live app and exported; the validator confirmed the file matched the design (25 checks). Small UI note: the export dialog does not close on Escape, only on its Close button. Parts C to E not run yet: Claude in Chrome was not connected during the session. |
+| 2026-11-01 | A, B | Pass | Standard design built in the live app and exported; the validator confirmed the file matched the design (25 checks). The respondent preview drew the 3 × 4 grid with "Your House" in row 2, column 2 and all five categories. Small UI note: the export dialog does not close on Escape, only on its Close button. Parts C to E not run yet: Claude in Chrome was not connected during the session. |
