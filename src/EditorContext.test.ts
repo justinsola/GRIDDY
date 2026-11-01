@@ -379,3 +379,17 @@ describe("normalizeConfig", () => {
     });
   });
 });
+
+// ─── Skip behaviour ─────────────────────────────────────────────────────────────
+
+describe("skip behaviour (what happens when cells are left empty)", () => {
+  it("treats surveys saved before the setting existed as remind", () => {
+    expect(normalizeConfig(makeBaseConfig()).survey.skipBehavior).toBe("remind");
+  });
+
+  it("keeps the researcher's choice", () => {
+    const config = makeBaseConfig();
+    config.survey.skipBehavior = "force";
+    expect(normalizeConfig(config).survey.skipBehavior).toBe("force");
+  });
+});

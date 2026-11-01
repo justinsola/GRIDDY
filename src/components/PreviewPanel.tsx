@@ -155,6 +155,16 @@ export const PreviewPanel: React.FC = () => {
 
   const [copied, setCopied] = useState(false);
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+
+  // Escape closes the export dialog, like clicking outside it.
+  useEffect(() => {
+    if (!isCodeModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsCodeModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isCodeModalOpen]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [blockEditMode, setBlockEditMode] = useState(false);
   const [activeBarrier, setActiveBarrier] = useState<string | null>(null);

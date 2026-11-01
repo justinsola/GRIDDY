@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
-import { CategoryMeta, ExperimentalConfig } from "../grid-types";
+import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
 import ImageInput from "./ImageInput";
 
@@ -43,6 +43,32 @@ const PREFILL_MODES = [
     desc: "Your painted assignments are shuffled per respondent.",
   },
 ] as const;
+
+const SKIP_BEHAVIORS: ReadonlyArray<{
+  value: SkipBehavior;
+  label: string;
+  desc: string;
+  summary: string;
+}> = [
+  {
+    value: "remind",
+    label: "Remind",
+    desc: "Pressing Next with empty cells shows a reminder and outlines them. Respondents can still continue.",
+    summary: "remind if empty",
+  },
+  {
+    value: "allow",
+    label: "Allow",
+    desc: "No check. Respondents can leave cells empty without a reminder.",
+    summary: "empty cells allowed",
+  },
+  {
+    value: "force",
+    label: "Require",
+    desc: "Respondents must fill every cell before they can continue.",
+    summary: "every cell required",
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Small helper: section number badge
@@ -138,6 +164,39 @@ const ModeCard: React.FC<ModeCardProps> = ({ label, desc, selected, onClick }) =
     <p className="pl-[22px] text-[11.5px] leading-snug text-ink-muted">{desc}</p>
   </button>
 );
+
+const SkipBehaviorControl: React.FC<{
+  value: SkipBehavior;
+  onChange: (value: SkipBehavior) => void;
+}> = ({ value, onChange }) => {
+  const current = SKIP_BEHAVIORS.find((b) => b.value === value) ?? SKIP_BEHAVIORS[0];
+  return (
+    <div className="mt-4">
+      <span className="text-[10px] font-bold tracking-widest text-ink-faint">
+        IF CELLS ARE LEFT EMPTY
+      </span>
+      <div role="radiogroup" aria-label="If cells are left empty" className="mt-1.5 flex gap-2">
+        {SKIP_BEHAVIORS.map((b) => (
+          <button
+            key={b.value}
+            type="button"
+            role="radio"
+            aria-checked={value === b.value}
+            onClick={() => onChange(b.value)}
+            className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              value === b.value
+                ? "border-[1.5px] border-accent bg-accent-soft text-ink"
+                : "border border-hairline bg-white text-ink-muted hover:border-accent/30"
+            }`}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-snug text-ink-muted">{current.desc}</p>
+    </div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Convert between chip array and categoryMeta
@@ -439,8 +498,12 @@ export const ConfigPanel: React.FC = () => {
     layout.questionText.length > 38 ? "…" : ""
   }" · ${layout.rows} × ${layout.cols}`;
 
-  const selModeSummary =
-    SELECTION_MODES.find((m) => m.value === survey.selectionMode)?.label ?? "";
+  const selModeSummary = [
+    SELECTION_MODES.find((m) => m.value === survey.selectionMode)?.label ?? "",
+    SKIP_BEHAVIORS.find((b) => b.value === (survey.skipBehavior ?? "remind"))?.summary ?? "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const categorySummary = (
     <span className="flex items-center gap-2">
@@ -524,6 +587,10 @@ export const ConfigPanel: React.FC = () => {
               />
             ))}
           </div>
+          <SkipBehaviorControl
+            value={survey.skipBehavior ?? "remind"}
+            onChange={(v) => dispatch({ type: "updateSurvey", patch: { skipBehavior: v } })}
+          />
         </section>
 
         {/* 04 — Add experiment opt-in */}
@@ -619,6 +686,10 @@ export const ConfigPanel: React.FC = () => {
             />
           ))}
         </div>
+        <SkipBehaviorControl
+          value={survey.skipBehavior ?? "remind"}
+          onChange={(v) => dispatch({ type: "updateSurvey", patch: { skipBehavior: v } })}
+        />
       </SummaryRow>
 
       {/* THE EXPERIMENT divider */}

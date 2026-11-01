@@ -43,3 +43,16 @@ it("keeps script-like survey text from escaping the preview bootstrap", () => {
   expect(parsed.querySelectorAll("script")).toHaveLength(1);
   expect(() => new Function(parsed.querySelector("script")!.textContent!)).not.toThrow();
 });
+
+it("closes the export dialog with Escape", () => {
+  act(() => root.render(<EditorProvider><PreviewPanel /></EditorProvider>));
+  const exportButton = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Export to Qualtrics",
+  )!;
+  act(() => exportButton.click());
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+});

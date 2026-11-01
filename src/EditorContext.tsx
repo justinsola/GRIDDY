@@ -150,6 +150,7 @@ export function normalizeConfig(config: GridConfig): GridConfig {
     survey: {
       ...config.survey,
       selectionMode: config.survey.selectionMode ?? "paint",
+      skipBehavior: config.survey.skipBehavior ?? "remind",
       categoryMeta: syncCategoryMeta(
         categoriesCsv,
         config.survey.categoryMeta ?? {},
@@ -216,6 +217,7 @@ function createDefaultConfig(): GridConfig {
     categoriesCsv: defaultCsv,
     allowInteraction: true,
     selectionMode: "paint",
+    skipBehavior: "remind",
     advancedCategories: false,
     categoryMeta: syncCategoryMeta(defaultCsv, {}),
   };

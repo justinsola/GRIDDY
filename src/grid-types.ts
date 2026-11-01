@@ -48,6 +48,13 @@ export interface SurveyConfig {
   allowInteraction: boolean;
   /** How respondents assign labels to cells when interaction is enabled. */
   selectionMode: SelectionMode;
+  /**
+   * What happens when a respondent presses Next with cells left empty:
+   * "remind" (the default) warns and lets them continue, "force" requires
+   * every cell, "allow" skips the check. Missing in surveys saved before
+   * November 2026, which behave as "remind".
+   */
+  skipBehavior?: SkipBehavior;
   /** Whether the advanced per-category customization panel is expanded. */
   advancedCategories: boolean;
   /** Per-category color and image metadata, keyed by category name. */

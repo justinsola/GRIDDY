@@ -15,6 +15,8 @@ export default function RespondentPreview({ snippet }: { snippet: string }) {
 <script>
 var question = {
   getQuestionTextContainer: function () { return document.getElementById("question"); },
+  hideNextButton: function () {},
+  showNextButton: function () {},
   clickNextButton: function () {
     var status = document.getElementById("finished");
     status.hidden = false;
@@ -35,7 +37,13 @@ document.body.appendChild(renderer);
 function fitPreview() {
   document.body.style.zoom = "1";
   document.body.style.width = "auto";
-  var width = Math.max(document.getElementById("question").scrollWidth, window.innerWidth - 16);
+  // Measure the grid at its designed size. In Qualtrics it scrolls sideways
+  // on narrow screens; this editor preview zooms out to show all of it.
+  var q = document.getElementById("question");
+  var natural = q.scrollWidth;
+  var scrollers = q.querySelectorAll("[data-griddy-scroller]");
+  for (var i = 0; i < scrollers.length; i++) natural = Math.max(natural, scrollers[i].scrollWidth + 2);
+  var width = Math.max(natural, window.innerWidth - 16);
   document.body.style.width = width + "px";
   document.body.style.zoom = Math.min(1, window.innerWidth / (width + 16));
 }

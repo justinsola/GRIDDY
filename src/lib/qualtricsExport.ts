@@ -101,6 +101,14 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var categories = [];
 	var allowInteraction = !!surveyCfg.allowInteraction;
 	var selectionMode = surveyCfg.selectionMode || "paint";
+	// What happens when the respondent presses Next with cells left empty:
+	// "remind" (the default) warns and lets them continue, "force" asks them
+	// to fill every cell, "allow" skips the check.
+	var skipBehavior = surveyCfg.skipBehavior === "allow" || surveyCfg.skipBehavior === "force"
+		? surveyCfg.skipBehavior
+		: "remind";
+	var reminderShown = false;
+	var cellEls = {};
 	var assignments = {};
 	var activeCategory = null;
 	var draggedCategory = null;
@@ -157,6 +165,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		return barrierMeta[name] || {};
 	}
 
+	// Quote an image URL for CSS. Double quotes inside the URL are
+	// percent-encoded, so a URL containing quotes or apostrophes cannot end
+	// the CSS string early.
+	function cssUrl(u) {
+		return 'url("' + String(u).split('"').join("%22") + '")';
+	}
+
 	// Append a background-colored filler positioned with fixed pixel offsets.
 	// css keys are among top/bottom/left/right/width/height (all "<n>px").
 	function makeFiller(color, css, image, imagePos) {
@@ -164,7 +179,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		f.style.position = "absolute";
 		f.style.backgroundColor = color;
 		if (image) {
-			f.style.backgroundImage = "url('" + image + "')";
+			f.style.backgroundImage = cssUrl(image);
 			f.style.backgroundSize = "cover";
 			f.style.backgroundRepeat = "no-repeat";
 			f.style.backgroundPosition = imagePos || "center";
@@ -247,18 +262,32 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		} else {
 			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(embeddedDataField)}, JSON.stringify(assignments));
 		}
+		if (reminderShown) onAnswersChanged();
+	}
+
+	// Pre-fills only go in cells of the current grid that can hold one: not a
+	// barrier and not the centre cell. Painted keys left over from a larger
+	// grid, or a centre cell switched on after painting, would otherwise be
+	// shown nowhere but still recorded in the pre-fill field.
+	function isPrefillable(k, centerRow, centerCol) {
+		if (blockedCells[k] || k.charAt(0) !== "r") return false;
+		var parts = k.slice(1).split("-c");
+		var r = parseInt(parts[0], 10);
+		var c = parseInt(parts[1], 10);
+		if (!(r >= 1 && r <= cfg.layout.rows && c >= 1 && c <= cfg.layout.cols)) return false;
+		return !(cfg.layout.includeCenterCell && r === centerRow && c === centerCol);
 	}
 
 	function computePrefills(totalCells, centerRow, centerCol) {
 		if (!isExperimental) return;
 		if (prefillMode === "fixed") {
 			Object.keys(fixedAssignments).forEach(function (k) {
-				if (blockedCells[k]) return;
+				if (!isPrefillable(k, centerRow, centerCol)) return;
 				prefills[k] = fixedAssignments[k];
 			});
 		} else if (prefillMode === "shuffle") {
 			var keys = Object.keys(fixedAssignments).filter(function (k) {
-				return !blockedCells[k];
+				return isPrefillable(k, centerRow, centerCol);
 			});
 			var values = keys.map(function (k) { return fixedAssignments[k]; });
 			for (var si = values.length - 1; si > 0; si--) {
@@ -464,7 +493,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			}
 			return;
 		}
-		if (responseLabels.length > 0) {
+		if (responseLabels.length > 0 && catName) {
 			var bottomDiv = document.createElement("div");
 			bottomDiv.style.flexShrink = "0";
 			bottomDiv.style.padding = "2px";
@@ -996,7 +1025,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var totalCellsCount = cfg.layout.rows * cfg.layout.cols;
 	var centerRowVal = cfg.layout.centerRow || Math.ceil(cfg.layout.rows / 2);
 	var centerColVal = cfg.layout.centerCol || Math.ceil(cfg.layout.cols / 2);
+	var centerKey = cfg.layout.includeCenterCell ? "r" + centerRowVal + "-c" + centerColVal : null;
 	computePrefills(totalCellsCount, centerRowVal, centerColVal);
+	// Record what this respondent was shown straight away, so a random
+	// pre-fill is saved even if they never react, and an untouched grid
+	// records an empty answer ("{}") instead of nothing.
+	persistAll();
 
 	var wrapper = document.createElement("div");
 	wrapper.style.width = cfg.tuning.previewWidth + "px";
@@ -1008,7 +1042,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	wrapper.style.position = "relative";
 
 	if (cfg.layout.backgroundImageUrl) {
-		wrapper.style.backgroundImage = "url('" + cfg.layout.backgroundImageUrl + "')";
+		wrapper.style.backgroundImage = cssUrl(cfg.layout.backgroundImageUrl);
 		wrapper.style.backgroundRepeat = "no-repeat";
 		wrapper.style.backgroundPosition = "center";
 		wrapper.style.backgroundSize = "contain";
@@ -1031,6 +1065,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var key = "r" + row + "-c" + col;
 		var isBlocked = !!blockedCells[key];
 		var cell = document.createElement("div");
+		cellEls[key] = cell;
 		cell.style.borderRadius = "0.375rem";
 		cell.style.border = "1px solid #e2dccf";
 		cell.style.minWidth = "0";
@@ -1086,8 +1121,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					}
 					if (dropped === "__CLEAR__") {
 						delete assignments[cellKey];
-					} else {
+					} else if (categories.indexOf(dropped) !== -1) {
 						assignments[cellKey] = dropped;
+					} else {
+						// Text dragged in from elsewhere is not an answer.
+						renderCellWithDelete(cellRef, cellKey, isCenterCell);
+						return;
 					}
 					persistAll();
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
@@ -1096,10 +1135,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 
 		if (isExperimental && responseLabels.length > 0 && selectionMode === "paint" && !isBlocked) {
-			cell.style.cursor = isCenter ? "default" : "pointer";
+			// Reactions belong on pre-filled cells only.
+			cell.style.cursor = isCenter || !prefills[key] ? "default" : "pointer";
 			(function (cellRef, cellKey, isCenterCell) {
 				cellRef.onclick = function () {
-					if (isCenterCell) return;
+					if (isCenterCell || !prefills[cellKey]) return;
 					if (!activeResponseLabel) return;
 					if (experimentalResponses[cellKey] === activeResponseLabel) {
 						delete experimentalResponses[cellKey];
@@ -1114,9 +1154,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 		if (isExperimental && responseLabels.length > 0 && selectionMode === "dragdrop" && !isBlocked) {
 			(function (cellRef, cellKey, isCenterCell) {
-				cellRef.style.cursor = isCenterCell ? "default" : "copy";
+				// Reactions belong on pre-filled cells only.
+				var acceptsReaction = !isCenterCell && !!prefills[cellKey];
+				cellRef.style.cursor = acceptsReaction ? "copy" : "default";
 				cellRef.ondragover = function (event) {
-					if (isCenterCell) return;
+					if (!acceptsReaction) return;
 					event.preventDefault();
 					if (event.dataTransfer) {
 						event.dataTransfer.dropEffect = "move";
@@ -1128,7 +1170,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
 				};
 				cellRef.ondrop = function (event) {
-					if (isCenterCell) return;
+					if (!acceptsReaction) return;
 					event.preventDefault();
 					var dropped = draggedResponseLabel;
 					if (!dropped && event.dataTransfer) {
@@ -1140,8 +1182,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					}
 					if (dropped === "__CLEAR_RESP__") {
 						delete experimentalResponses[cellKey];
-					} else {
+					} else if (responseLabels.indexOf(dropped) !== -1) {
 						experimentalResponses[cellKey] = dropped;
+					} else {
+						renderCellWithDelete(cellRef, cellKey, isCenterCell);
+						return;
 					}
 					persistAll();
 					renderCellWithDelete(cellRef, cellKey, isCenterCell);
@@ -1153,12 +1198,280 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	wrapper.appendChild(grid);
-	container.appendChild(wrapper);
+
+	// The grid keeps the size the researcher designed on every screen. When the
+	// question area is narrower (a phone, or a very wide grid), the grid scrolls
+	// sideways inside this frame instead of shrinking, and a hint plus arrows at
+	// the edges show that part of it is off-screen.
+	var frame = document.createElement("div");
+	frame.setAttribute("data-griddy-frame", "");
+	frame.style.position = "relative";
+	frame.style.maxWidth = "100%";
+
+	var scroller = document.createElement("div");
+	scroller.setAttribute("data-griddy-scroller", "");
+	scroller.style.overflowX = "auto";
+	scroller.style.overflowY = "hidden";
+	scroller.style.maxWidth = "100%";
+	scroller.style.webkitOverflowScrolling = "touch";
+	scroller.appendChild(wrapper);
+	frame.appendChild(scroller);
+
+	var scrollHint = document.createElement("div");
+	scrollHint.setAttribute("data-griddy-scroll-hint", "");
+	scrollHint.textContent = "↔ This grid is wider than your screen. Scroll sideways to see all of it.";
+	scrollHint.style.display = "none";
+	scrollHint.style.margin = "0 0 6px";
+	scrollHint.style.fontSize = "12px";
+	scrollHint.style.fontWeight = "600";
+	scrollHint.style.color = "#8a2e3b";
+
+	function scrollGridBy(dx) {
+		if (typeof scroller.scrollBy === "function") {
+			try {
+				scroller.scrollBy({ left: dx, behavior: "smooth" });
+				return;
+			} catch (e) { /* older browsers jump instead */ }
+		}
+		scroller.scrollLeft += dx;
+	}
+
+	function makeEdge(side) {
+		var edge = document.createElement("div");
+		edge.setAttribute("data-griddy-edge", side);
+		edge.style.position = "absolute";
+		edge.style.top = "0";
+		edge.style.bottom = "0";
+		edge.style[side] = "0";
+		edge.style.width = "48px";
+		edge.style.display = "none";
+		edge.style.alignItems = "center";
+		edge.style.justifyContent = "center";
+		edge.style.pointerEvents = "none";
+		edge.style.zIndex = "30";
+		edge.style.background = "linear-gradient(to " + (side === "left" ? "right" : "left") + ", rgba(243,239,230,0.95), rgba(243,239,230,0))";
+		var btn = document.createElement("button");
+		btn.type = "button";
+		btn.textContent = side === "left" ? "‹" : "›";
+		btn.style.position = "relative";
+		btn.style.pointerEvents = "auto";
+		btn.style.width = "34px";
+		btn.style.height = "34px";
+		btn.style.borderRadius = "9999px";
+		btn.style.border = "none";
+		btn.style.backgroundColor = "rgba(42,36,28,0.78)";
+		btn.style.color = "#ffffff";
+		btn.style.fontFamily = "inherit";
+		btn.style.fontSize = "22px";
+		btn.style.lineHeight = "1";
+		btn.style.cursor = "pointer";
+		btn.onclick = function () {
+			var step = Math.max(80, Math.round(scroller.clientWidth * 0.8));
+			scrollGridBy(side === "left" ? -step : step);
+		};
+		var badge = document.createElement("span");
+		badge.style.position = "absolute";
+		badge.style.top = "-7px";
+		badge.style[side] = "-7px";
+		badge.style.minWidth = "18px";
+		badge.style.height = "18px";
+		badge.style.padding = "0 4px";
+		badge.style.boxSizing = "border-box";
+		badge.style.borderRadius = "9999px";
+		badge.style.border = "1px solid #c2410c";
+		badge.style.backgroundColor = "#ffffff";
+		badge.style.color = "#c2410c";
+		badge.style.fontSize = "11px";
+		badge.style.fontWeight = "700";
+		badge.style.lineHeight = "16px";
+		badge.style.textAlign = "center";
+		badge.style.display = "none";
+		btn.appendChild(badge);
+		edge.appendChild(btn);
+		frame.appendChild(edge);
+		return { side: side, edge: edge, button: btn, badge: badge };
+	}
+	var leftEdge = makeEdge("left");
+	var rightEdge = makeEdge("right");
+
+	// Cells the respondent is asked to fill: every open cell of a standard
+	// grid, or every pre-filled cell when they react to an experiment.
+	function fillableKeys() {
+		var keys = [];
+		Object.keys(cellEls).forEach(function (k) {
+			if (blockedCells[k] || k === centerKey) return;
+			if (isExperimental) {
+				if (responseLabels.length > 0 && prefills[k]) keys.push(k);
+			} else if (allowInteraction && categories.length > 0) {
+				keys.push(k);
+			}
+		});
+		return keys;
+	}
+
+	function unfilledKeys() {
+		return fillableKeys().filter(function (k) {
+			return isExperimental ? !experimentalResponses[k] : !assignments[k];
+		});
+	}
+
+	// How many of these cells sit mostly beyond the left or right edge.
+	function offscreenCounts(keys) {
+		var counts = { left: 0, right: 0 };
+		var view = scroller.getBoundingClientRect();
+		if (!(view.right > view.left)) return counts;
+		keys.forEach(function (k) {
+			var box = cellEls[k].getBoundingClientRect();
+			var middle = (box.left + box.right) / 2;
+			if (middle < view.left) counts.left++;
+			else if (middle > view.right) counts.right++;
+		});
+		return counts;
+	}
+
+	function setEdgeBadge(parts, emptyCount) {
+		parts.badge.textContent = emptyCount > 0 ? String(emptyCount) : "";
+		parts.badge.style.display = emptyCount > 0 ? "block" : "none";
+		parts.button.style.backgroundColor = emptyCount > 0 ? "#c2410c" : "rgba(42,36,28,0.78)";
+		parts.button.setAttribute(
+			"aria-label",
+			"Scroll the grid " + parts.side + (emptyCount > 0 ? " (" + emptyCount + (emptyCount === 1 ? " empty cell there)" : " empty cells there)") : "")
+		);
+	}
+
+	function updateIndicators() {
+		var overflow = scroller.scrollWidth - scroller.clientWidth > 1;
+		// Offer sideways scrolling only when the grid really is wider than the
+		// space; a rounding pixel would otherwise draw a needless scrollbar.
+		scroller.style.overflowX = overflow ? "auto" : "hidden";
+		var atStart = scroller.scrollLeft <= 1;
+		var atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
+		scrollHint.style.display = overflow ? "block" : "none";
+		leftEdge.edge.style.display = overflow && !atStart ? "flex" : "none";
+		rightEdge.edge.style.display = overflow && !atEnd ? "flex" : "none";
+		var hidden = reminderShown ? offscreenCounts(unfilledKeys()) : { left: 0, right: 0 };
+		setEdgeBadge(leftEdge, hidden.left);
+		setEdgeBadge(rightEdge, hidden.right);
+	}
 
 	var controls = document.createElement("div");
 	controls.style.marginTop = "10px";
 	controls.style.display = "flex";
 	controls.style.justifyContent = "flex-end";
+
+	// Shown when Next is pressed with cells still empty (unless the researcher
+	// chose "allow"). Empty cells get an orange outline, and the edge arrows
+	// count the empty cells that are off-screen.
+	var reminder = document.createElement("div");
+	reminder.setAttribute("role", "alert");
+	reminder.setAttribute("data-griddy-reminder", "");
+	reminder.style.display = "none";
+	reminder.style.marginTop = "10px";
+	reminder.style.padding = "10px 12px";
+	reminder.style.border = "1px solid #f0c2a2";
+	reminder.style.borderRadius = "8px";
+	reminder.style.backgroundColor = "#fff4ec";
+	reminder.style.color = "#2a241c";
+	reminder.style.fontSize = "13px";
+	reminder.style.lineHeight = "1.4";
+	var reminderText = document.createElement("div");
+	reminder.appendChild(reminderText);
+	var reminderActions = document.createElement("div");
+	reminderActions.style.display = "flex";
+	reminderActions.style.flexWrap = "wrap";
+	reminderActions.style.justifyContent = "flex-end";
+	reminderActions.style.gap = "8px";
+	reminderActions.style.marginTop = "8px";
+	reminder.appendChild(reminderActions);
+
+	function makeActionButton(text, primary) {
+		var b = document.createElement("button");
+		b.type = "button";
+		b.textContent = text;
+		b.style.border = "1px solid " + (primary ? "#8a2e3b" : "#d9cfbf");
+		b.style.backgroundColor = primary ? "#8a2e3b" : "#ffffff";
+		b.style.color = primary ? "#ffffff" : "#2a241c";
+		b.style.borderRadius = "8px";
+		b.style.padding = "8px 12px";
+		b.style.fontFamily = "inherit";
+		b.style.fontSize = "12px";
+		b.style.fontWeight = "600";
+		b.style.cursor = "pointer";
+		reminderActions.appendChild(b);
+		return b;
+	}
+	var showMeBtn = makeActionButton("Show me", false);
+	var continueBtn = makeActionButton("Continue anyway", true);
+
+	function describeMissing(missing) {
+		var n = missing.length;
+		var them = n === 1 ? "it" : "them";
+		var off = offscreenCounts(missing);
+		var offCount = off.left + off.right;
+		var text = isExperimental
+			? (n === 1 ? "1 pre-filled cell has no reaction yet" : n + " pre-filled cells have no reaction yet")
+			: (n === 1 ? "1 cell is still empty" : n + " cells are still empty");
+		if (offCount > 0) {
+			if (offCount === n) {
+				text += n === 1 ? ", and it is off-screen" : ", all of them off-screen";
+			} else {
+				text += ", including " + offCount + " off-screen";
+			}
+		}
+		text += n === 1 ? ". It is outlined in orange." : ". They are outlined in orange.";
+		if (skipBehavior === "force") {
+			text += isExperimental
+				? " Please react to every outlined cell before continuing."
+				: " Please fill in every outlined cell before continuing.";
+		} else {
+			text += isExperimental
+				? " You can react to " + them + " now or continue anyway."
+				: " You can fill " + them + " in now or continue anyway.";
+		}
+		return text;
+	}
+
+	function refreshHighlights() {
+		var missing = {};
+		if (reminderShown) {
+			unfilledKeys().forEach(function (k) { missing[k] = true; });
+		}
+		Object.keys(cellEls).forEach(function (k) {
+			cellEls[k].style.outline = missing[k] ? "2px dashed #c2410c" : "";
+			cellEls[k].style.outlineOffset = missing[k] ? "-4px" : "";
+		});
+	}
+
+	function onAnswersChanged() {
+		var missing = unfilledKeys();
+		if (missing.length === 0) {
+			reminder.style.display = "none";
+		} else if (reminder.style.display !== "none") {
+			reminderText.textContent = describeMissing(missing);
+		}
+		refreshHighlights();
+		updateIndicators();
+	}
+
+	function revealCell(el) {
+		if (!el || typeof el.scrollIntoView !== "function") return;
+		try {
+			el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+		} catch (e) {
+			el.scrollIntoView();
+		}
+	}
+
+	function goToNextPage() {
+		persistAll();
+		question.clickNextButton();
+	}
+
+	showMeBtn.onclick = function () {
+		var missing = unfilledKeys();
+		if (missing.length > 0) revealCell(cellEls[missing[0]]);
+	};
+	continueBtn.onclick = goToNextPage;
 
 	var nextBtn = document.createElement("button");
 	nextBtn.type = "button";
@@ -1168,15 +1481,50 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	nextBtn.style.color = "#ffffff";
 	nextBtn.style.borderRadius = "8px";
 	nextBtn.style.padding = "8px 12px";
+	nextBtn.style.fontFamily = "inherit";
 	nextBtn.style.fontSize = "12px";
 	nextBtn.style.fontWeight = "600";
 	nextBtn.style.cursor = "pointer";
 	nextBtn.onclick = function () {
-		question.clickNextButton();
+		var missing = skipBehavior === "allow" ? [] : unfilledKeys();
+		if (missing.length === 0) {
+			goToNextPage();
+			return;
+		}
+		reminderShown = true;
+		reminderText.textContent = describeMissing(missing);
+		continueBtn.style.display = skipBehavior === "force" ? "none" : "inline-block";
+		reminder.style.display = "block";
+		refreshHighlights();
+		updateIndicators();
 	};
 
 	controls.appendChild(nextBtn);
+	container.appendChild(scrollHint);
+	container.appendChild(frame);
+	container.appendChild(reminder);
 	container.appendChild(controls);
+
+	scroller.addEventListener("scroll", function () {
+		updateIndicators();
+		if (reminderShown && reminder.style.display !== "none") {
+			var missing = unfilledKeys();
+			if (missing.length > 0) reminderText.textContent = describeMissing(missing);
+		}
+	});
+	window.addEventListener("resize", updateIndicators);
+	if (typeof ResizeObserver === "function") {
+		new ResizeObserver(updateIndicators).observe(scroller);
+	}
+	updateIndicators();
+	setTimeout(updateIndicators, 400);
+
+	// The grid's own Next button runs the empty-cell check, so Qualtrics' Next
+	// button is hidden on this page while the check is on; otherwise a
+	// respondent could skip the check by using it.
+	if (skipBehavior !== "allow" && fillableKeys().length > 0 && typeof question.hideNextButton === "function") {
+		question.hideNextButton();
+	}
 });
 
 Qualtrics.SurveyEngine.addOnUnload(function()
