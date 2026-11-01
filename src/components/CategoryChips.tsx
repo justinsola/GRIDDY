@@ -165,7 +165,15 @@ export const CategoryChips: React.FC<Props> = ({
                 type="text"
                 value={draftName ?? open.name}
                 onChange={(e) => renameOpen(e.target.value)}
-                onBlur={() => setDraft(null)}
+                onBlur={() => {
+                  // Spaces at either end would make the name differ from the
+                  // trimmed one used in the export; drop them when done typing.
+                  const typed = draftName ?? open.name;
+                  const trimmed = typed.trim();
+                  const clash = items.some((it, i) => i !== openIndex && it.name.trim() === trimmed);
+                  if (trimmed !== typed && !clash) update(openIndex, { name: trimmed });
+                  setDraft(null);
+                }}
                 className="rounded-lg border border-hairline bg-white px-3 py-2.5 font-serif text-[15px] text-ink focus:border-accent focus:outline-none"
               />
               {nameProblem && (

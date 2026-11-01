@@ -1,9 +1,11 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import {
   stableStringify,
   surveyFingerprint,
   importSurveys,
   describeImport,
+  saveSurvey,
+  STORAGE_FULL_MESSAGE,
 } from "./surveysApi";
 import type { GridConfig } from "../grid-types";
 
@@ -183,5 +185,18 @@ describe("importSurveys", () => {
     expect(
       describeImport({ importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 0 }),
     ).toBe("Backup imported, but it did not contain any surveys.");
+  });
+});
+
+describe("saving when the browser's storage is full", () => {
+  it("says so in words a researcher can act on", async () => {
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      await expect(saveSurvey(makeConfig({ id: "full", name: "Big map" }))).rejects.toThrow(STORAGE_FULL_MESSAGE);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

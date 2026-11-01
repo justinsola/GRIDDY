@@ -79,9 +79,20 @@ function readLocalSurveys(): ExportedSurvey[] {
   }
 }
 
+export const STORAGE_FULL_MESSAGE =
+  "This browser's storage for GRIDDY is full, so nothing was saved. Uploaded images take the most space: export a JSON backup from My surveys, then delete surveys you no longer need or use smaller images.";
+
 function writeLocalSurveys(surveys: ExportedSurvey[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_SURVEYS_STORAGE_KEY, JSON.stringify(surveys));
+  try {
+    window.localStorage.setItem(LOCAL_SURVEYS_STORAGE_KEY, JSON.stringify(surveys));
+  } catch (e) {
+    const name = (e as { name?: string }).name;
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
+      throw new Error(STORAGE_FULL_MESSAGE);
+    }
+    throw e;
+  }
 }
 
 export function stableStringify(value: unknown): string {

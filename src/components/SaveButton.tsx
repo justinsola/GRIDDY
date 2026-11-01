@@ -25,9 +25,10 @@ export default function SaveButton() {
       setFlash("saved");
       setTimeout(() => setFlash(null), 2000);
     } catch (e) {
+      // Keep a failed save on screen until the next attempt; it means the
+      // survey is not stored.
       setErrorMsg((e as Error).message);
       setFlash("error");
-      setTimeout(() => setFlash(null), 3000);
     } finally {
       setSaving(false);
     }
@@ -50,7 +51,9 @@ export default function SaveButton() {
         {saving ? "Saving…" : flash === "saved" ? "Saved!" : "Save"}
       </button>
       {flash === "error" && (
-        <p className="text-xs text-red-600">{errorMsg}</p>
+        <p role="alert" className="max-w-xs text-right text-xs text-red-600">
+          {errorMsg}
+        </p>
       )}
     </div>
   );

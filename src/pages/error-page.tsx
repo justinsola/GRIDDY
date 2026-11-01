@@ -1,5 +1,5 @@
 import FlexContainer from "@/components/FlexContainer";
-import { ErrorResponse, useRouteError } from "react-router-dom";
+import { ErrorResponse, Link, useRouteError } from "react-router-dom";
 
 interface ErrorPageProps extends ErrorResponse {
   message: string;
@@ -21,6 +21,12 @@ export default function ErrorPage() {
       <p className="text-lg text-ink-faint">
         <i>{statusText || message}</i>
       </p>
+      <Link
+        to="/"
+        className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+      >
+        Back to the editor
+      </Link>
     </FlexContainer>
   );
 }

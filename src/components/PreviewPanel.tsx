@@ -1052,17 +1052,19 @@ export const PreviewPanel: React.FC = () => {
                       window).
                     </li>
                     <li>
-                      In Qualtrics, go to <strong>Projects</strong> &rarr;{" "}
-                      <strong>Create project</strong> &rarr;{" "}
-                      <strong>Survey</strong>.
+                      In Qualtrics, click <strong>Create project</strong>,
+                      choose <strong>Survey</strong>, then{" "}
+                      <strong>Get started</strong>.
                     </li>
                     <li>
-                      Choose <strong>“Import a QSF file”</strong>, select the
+                      Name the project. Under{" "}
+                      <strong>“How do you want to start your survey?”</strong>{" "}
+                      choose <strong>“Import a QSF file”</strong>, choose the
                       downloaded{" "}
                       <code className="rounded bg-emerald-100 px-1 font-mono">
                         .qsf
                       </code>
-                      , and create the project.
+                      , and click <strong>Create project</strong>.
                     </li>
                     <li>
                       <strong>Publish</strong>. Then the grid renders and

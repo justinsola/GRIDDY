@@ -30,7 +30,7 @@ const STEPS: Step[] = [
   {
     target: '[data-tour="preview"]',
     title: "Live preview",
-    content: "This preview updates as you edit — it's exactly what respondents will see.",
+    content: "This preview updates as you edit. Switch to Respondent preview to try the grid exactly as respondents will; clicks here are not saved or exported.",
     placement: "left",
   },
   {

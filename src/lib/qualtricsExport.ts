@@ -67,7 +67,9 @@ export function buildQualtricsSnippet(
     layout: config.layout,
     tuning: config.tuning,
     survey: config.survey,
-    experimental: config.experimental ?? null,
+    // A switched-off experiment stays in the editor but is not shipped,
+    // so its settings and reaction images do not bloat the exported script.
+    experimental: config.experimental?.enabled ? config.experimental : null,
   };
   const cfgJson = JSON.stringify(exportConfig, null, 2);
 
@@ -214,7 +216,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var g = gap + "px";
 		var ng = -gap + "px";
 		var radius = 6; // matches the loop's 0.375rem cell radius
-		function at(r, c) { return blockedCells["r" + r + "-c" + c] === name; }
+		// Only neighbours inside the current grid join; barriers left over from a
+		// larger grid would otherwise draw bridges out past the frame.
+		function at(r, c) {
+			if (r < 1 || c < 1 || r > cfg.layout.rows || c > cfg.layout.cols) return false;
+			return blockedCells["r" + r + "-c" + c] === name;
+		}
 		var cUp = at(row - 1, col);
 		var cDown = at(row + 1, col);
 		var cLeft = at(row, col - 1);
@@ -525,7 +532,6 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			select.style.padding = "2px 4px";
 			select.style.fontSize = "9px";
 			select.style.color = "#2a241c";
-			select.style.outline = "none";
 
 			var emptyOpt = document.createElement("option");
 			emptyOpt.value = "";

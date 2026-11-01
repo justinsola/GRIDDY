@@ -453,6 +453,33 @@ describe("fonts and long labels", () => {
   });
 });
 
+describe("what the export carries", () => {
+  it("leaves a switched-off experiment, and its reaction images, out of the script", () => {
+    const base = experimental({
+      enabled: false,
+      responseLabelMeta: { Agree: { color: "#22c55e", imageUrl: "data:image/png;base64,REACTIONIMAGE" } },
+    });
+    const snippet = buildQualtricsSnippet(base);
+    expect(snippet).not.toContain("REACTIONIMAGE");
+    expect(snippet).toContain('"experimental": null');
+  });
+
+  it("does not join a barrier to blocked cells left outside a shrunken grid", () => {
+    const base = makeConfig();
+    const withBarrier = (blockedCells: Record<string, string>): GridConfig => ({
+      ...base,
+      layout: { ...base.layout, barriersCsv: "Wall", barrierMeta: { Wall: { color: "#334155", imageUrl: "" } }, blockedCells },
+    });
+    const fillerCount = (config: GridConfig) =>
+      Array.from(cells(run(config).container)[2].children).filter(
+        (c) => (c as HTMLElement).style.position === "absolute",
+      ).length;
+    expect(fillerCount(withBarrier({ "r1-c3": "Wall", "r1-c4": "Wall" }))).toBe(
+      fillerCount(withBarrier({ "r1-c3": "Wall" })),
+    );
+  });
+});
+
 describe("image URLs", () => {
   it("keeps a background image whose URL contains an apostrophe", () => {
     const base = makeConfig();
