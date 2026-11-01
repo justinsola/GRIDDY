@@ -1,5 +1,5 @@
-import { Joyride, STATUS } from "react-joyride";
-import type { EventData, Step } from "react-joyride";
+import { ACTIONS, Joyride, STATUS } from "react-joyride";
+import type { Controls, EventData, Step } from "react-joyride";
 
 const STEPS: Step[] = [
   {
@@ -53,7 +53,15 @@ interface TourGuideProps {
 }
 
 export default function TourGuide({ run, onFinish }: TourGuideProps) {
-  const handleEvent = (data: EventData) => {
+  const handleEvent = (data: EventData, controls: Controls) => {
+    // Escape and a click on the backdrop only "close" a step, which in a
+    // continuous tour leaves a pulsing beacon with the tour still running,
+    // so Take a tour would do nothing. End the tour instead, as the close
+    // button does.
+    if (data.action === ACTIONS.CLOSE && data.status === STATUS.RUNNING) {
+      controls.skip();
+      return;
+    }
     if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
       onFinish();
     }
@@ -74,6 +82,7 @@ export default function TourGuide({ run, onFinish }: TourGuideProps) {
         overlayColor: "rgba(42, 36, 28, 0.55)",
         zIndex: 10000,
         showProgress: true,
+        closeButtonAction: "skip",
         buttons: ["back", "close", "skip", "primary"],
       }}
       styles={{

@@ -38,6 +38,30 @@ function canEncodeWebp(): boolean {
   return webpSupported;
 }
 
+/**
+ * How an uploaded image is re-encoded. Vector images (SVG) have no useful
+ * pixel size of their own, so they are drawn at the full size limit; raster
+ * images are only ever shrunk. Every format that can carry transparency keeps
+ * it: WebP where the browser can encode it, otherwise PNG. Only JPEG and HEIC
+ * sources, which have no transparency, may become JPEG.
+ */
+export function encodingPlan(
+  type: string,
+  width: number,
+  height: number,
+  maxDim: number,
+  webp: boolean,
+): { width: number; height: number; mime: string } {
+  const longest = Math.max(width, height);
+  const scale = type === "image/svg+xml" ? maxDim / longest : Math.min(1, maxDim / longest);
+  const opaque = /^image\/(jpe?g|hei[cf])$/.test(type);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    mime: webp ? "image/webp" : opaque ? "image/jpeg" : "image/png",
+  };
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -76,9 +100,9 @@ export async function fileToDataUri(
       throw new Error("That image appears to be empty.");
     }
 
-    const scale = Math.min(1, maxDim / Math.max(width, height));
-    const outW = Math.max(1, Math.round(width * scale));
-    const outH = Math.max(1, Math.round(height * scale));
+    const plan = encodingPlan(file.type, width, height, maxDim, canEncodeWebp());
+    const outW = plan.width;
+    const outH = plan.height;
 
     const canvas = document.createElement("canvas");
     canvas.width = outW;
@@ -87,16 +111,8 @@ export async function fileToDataUri(
     if (!ctx) throw new Error("Your browser couldn't process that image.");
     ctx.drawImage(img, 0, 0, outW, outH);
 
-    const needsAlpha = file.type === "image/png" || file.type === "image/gif";
-    let mime: string;
-    if (canEncodeWebp()) {
-      mime = "image/webp";
-    } else {
-      mime = needsAlpha ? "image/png" : "image/jpeg";
-    }
-
     // PNG ignores the quality argument; that's fine.
-    return canvas.toDataURL(mime, quality);
+    return canvas.toDataURL(plan.mime, quality);
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
