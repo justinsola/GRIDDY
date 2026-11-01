@@ -55,6 +55,13 @@ export interface SurveyConfig {
    * November 2026, which behave as "remind".
    */
   skipBehavior?: SkipBehavior;
+  /**
+   * Optional ending for this grid's embedded-data field names when it is
+   * exported on its own ("Q2" saves to GridAssignments_Q2), so two grids in
+   * one Qualtrics survey keep their answers apart. Empty keeps the plain
+   * names.
+   */
+  fieldSuffix?: string;
   /** Whether the advanced per-category customization panel is expanded. */
   advancedCategories: boolean;
   /** Per-category color and image metadata, keyed by category name. */

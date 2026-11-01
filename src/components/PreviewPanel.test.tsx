@@ -72,3 +72,20 @@ it("leaves block-cells mode when the researcher picks a category to place", () =
   expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "Done blocking")).toBe(false);
   expect(buttonByText("Block cells")).toBeDefined();
 });
+
+it("lets the export dialog give this grid's fields their own ending", () => {
+  act(() => root.render(<EditorProvider><PreviewPanel /></EditorProvider>));
+  act(() => Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Export to Qualtrics",
+  )!.click());
+  const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("GridAssignments");
+  const input = dialog.querySelector<HTMLInputElement>('input[aria-label="Field name ending"]')!;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  act(() => {
+    setValue.call(input, "Q2");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(dialog.textContent).toContain("GridAssignments_Q2");
+  expect(dialog.querySelector("textarea")!.value).toContain('"GridAssignments_Q2"');
+});

@@ -5,6 +5,7 @@ import { LayerMode, WeightEntry } from "../grid-types";
 import {
   buildQualtricsSnippet,
   buildQualtricsQsfForConfig,
+  singleGridFieldNames,
 } from "../lib/qualtricsExport";
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -397,7 +398,11 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  const qualtricsSnippet = useMemo(() => buildQualtricsSnippet(config), [config]);
+  const fieldNames = useMemo(() => singleGridFieldNames(config), [config]);
+  const qualtricsSnippet = useMemo(
+    () => buildQualtricsSnippet(config, fieldNames),
+    [config, fieldNames],
+  );
   const qualtricsQsf = useMemo(
     () => buildQualtricsQsfForConfig(config),
     [config],
@@ -405,9 +410,9 @@ export const PreviewPanel: React.FC = () => {
   const exportFields = useMemo(
     () =>
       expEnabled
-        ? ["GridPrefills", "GridResponses"]
-        : ["GridAssignments"],
-    [expEnabled],
+        ? [fieldNames.prefillsField, fieldNames.responsesField]
+        : [fieldNames.embeddedDataField],
+    [expEnabled, fieldNames],
   );
 
   const handleCopy = async () => {
@@ -1087,14 +1092,14 @@ export const PreviewPanel: React.FC = () => {
                         <>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              GridPrefills
+                              {fieldNames.prefillsField}
                             </code>{" "}
                             — what was shown, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
                           </li>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              GridResponses
+                              {fieldNames.responsesField}
                             </code>{" "}
                             — what the respondent selected, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Good"}`}</code>
@@ -1103,7 +1108,7 @@ export const PreviewPanel: React.FC = () => {
                       ) : (
                         <li>
                           <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                            GridAssignments
+                            {fieldNames.embeddedDataField}
                           </code>{" "}
                           — e.g.{" "}
                           <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
@@ -1117,13 +1122,27 @@ export const PreviewPanel: React.FC = () => {
                       &rarr; <strong>Embedded Data</strong>; data downloads
                       always include it.
                     </p>
+                    <label className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="font-medium">Field name ending</span>
+                      <input
+                        type="text"
+                        value={survey.fieldSuffix ?? ""}
+                        onChange={(e) =>
+                          dispatch({ type: "updateSurvey", patch: { fieldSuffix: e.target.value } })
+                        }
+                        placeholder="optional, e.g. Q2"
+                        aria-label="Field name ending"
+                        className="w-40 rounded-md border border-emerald-200 bg-white px-2 py-1 font-mono text-xs text-slate-800 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </label>
                     <p className="mt-1.5 text-emerald-700">
                       Putting more than one grid in the same Qualtrics survey?
-                      Combine them on <strong>My surveys</strong> &rarr;{" "}
-                      <strong>Make multi-question survey</strong>, so each grid
-                      saves to its own fields. Two grids exported separately
-                      share these field names, and the later one&apos;s answers
-                      would replace the earlier one&apos;s.
+                      Give each its own field name ending here, or combine them
+                      on <strong>My surveys</strong> &rarr;{" "}
+                      <strong>Make multi-question survey</strong>. Grids that
+                      share field names overwrite each other&apos;s answers, so
+                      only one set is kept. That includes a grid question
+                      copied in Qualtrics or repeated with Loop &amp; Merge.
                     </p>
                   </div>
                 </section>

@@ -56,6 +56,25 @@ export function sanitizeEmbeddedDataField(name: string, fallback: string): strin
   return normalized.length > 64 ? normalized.slice(0, 64) : normalized;
 }
 
+/** The embedded-data fields a grid exported on its own saves to: the plain
+ * names, or the names with the survey's field name ending. */
+export function singleGridFieldNames(config: GridConfig): Required<QualtricsExportOptions> {
+  const ending = (config.survey.fieldSuffix ?? "").trim();
+  // An ending with no letters or digits would clean up to nothing.
+  if (!/[A-Za-z0-9]/.test(ending)) {
+    return {
+      embeddedDataField: "GridAssignments",
+      prefillsField: "GridPrefills",
+      responsesField: "GridResponses",
+    };
+  }
+  return {
+    embeddedDataField: sanitizeEmbeddedDataField(`GridAssignments_${ending}`, "GridAssignments"),
+    prefillsField: sanitizeEmbeddedDataField(`GridPrefills_${ending}`, "GridPrefills"),
+    responsesField: sanitizeEmbeddedDataField(`GridResponses_${ending}`, "GridResponses"),
+  };
+}
+
 export function buildQualtricsSnippet(
   config: GridConfig,
   options: QualtricsExportOptions = {},
@@ -2542,7 +2561,7 @@ export function buildQualtricsQsfForConfig(
 ): string {
   const name = surveyName || config.name || "GRIDDY Survey";
   return buildQualtricsQsf(
-    [{ title: config.name || name, config }],
+    [{ title: config.name || name, config, ...singleGridFieldNames(config) }],
     name,
   );
 }

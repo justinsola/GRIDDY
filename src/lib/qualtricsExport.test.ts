@@ -8,6 +8,7 @@ import {
   buildQualtricsQsfForConfig,
   qsfEmbeddedFields,
   QualtricsQsfItem,
+  singleGridFieldNames,
 } from "./qualtricsExport";
 import { GridConfig } from "../grid-types";
 
@@ -504,5 +505,47 @@ describe("license header", () => {
       (el: { Element: string }) => el.Element === "SQ",
     );
     expect(question.Payload.QuestionJS.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
+  });
+});
+
+describe("field name ending for a grid exported on its own", () => {
+  const withEnding = (fieldSuffix: string, base = makeConfig()): GridConfig => ({
+    ...base,
+    survey: { ...base.survey, fieldSuffix },
+  });
+  const declaredFields = (config: GridConfig): string[] => {
+    const qsf = JSON.parse(buildQualtricsQsfForConfig(config));
+    const flow = qsf.SurveyElements.find((e: { Element: string }) => e.Element === "FL");
+    const ed = flow.Payload.Flow.find((f: { Type: string }) => f.Type === "EmbeddedData");
+    return ed.EmbeddedData.map((d: { Field: string }) => d.Field);
+  };
+
+  it("keeps the plain names when no ending is set", () => {
+    expect(singleGridFieldNames(makeConfig())).toEqual({
+      embeddedDataField: "GridAssignments",
+      prefillsField: "GridPrefills",
+      responsesField: "GridResponses",
+    });
+    expect(singleGridFieldNames(withEnding(" - ")).embeddedDataField).toBe("GridAssignments");
+  });
+
+  it("adds the ending to every field, cleaned up for Qualtrics", () => {
+    expect(singleGridFieldNames(withEnding("Q2 after"))).toEqual({
+      embeddedDataField: "GridAssignments_Q2_after",
+      prefillsField: "GridPrefills_Q2_after",
+      responsesField: "GridResponses_Q2_after",
+    });
+  });
+
+  it("uses the same names in the .qsf and in the script", () => {
+    const config = withEnding("Q2");
+    expect(declaredFields(config)).toEqual(["GridAssignments_Q2"]);
+    const qsf = JSON.parse(buildQualtricsQsfForConfig(config));
+    const question = qsf.SurveyElements.find((e: { Element: string }) => e.Element === "SQ");
+    expect(question.Payload.QuestionJS).toContain('"GridAssignments_Q2"');
+    expect(declaredFields(withEnding("Q2", makeExperimentalConfig("paint")))).toEqual([
+      "GridPrefills_Q2",
+      "GridResponses_Q2",
+    ]);
   });
 });

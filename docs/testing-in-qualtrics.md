@@ -109,15 +109,16 @@ from time to time; when they differ, update all three.
    logged as an error.
 5. Switch the preview to the mobile view. The grid must keep its designed
    size: cells, text and pictures the same as on desktop, never shrunk to
-   fit. A hint ("This grid is wider than your screen. Scroll sideways to see
-   all of it.") and an arrow at the right edge must appear. The arrow scrolls
+   fit. A hint ("Part of this grid is out of view. Scroll sideways to see all
+   of it.") and an arrow at the right edge must appear. The arrow scrolls
    the grid, and a left arrow appears once it has scrolled.
 6. Press the grid's own **Next** button (the red one under the grid) with
    cells still empty. With the default setting (Remind), a reminder says how
    many cells are empty and how many of them are off-screen, the empty cells
    get an orange outline, and the edge arrows show how many empty cells lie
-   beyond them. **Show me** scrolls to the first empty cell; **Continue
-   anyway** moves on. Qualtrics' own Next button must not be on the page.
+   beyond them. **Show me** scrolls to the first empty cell that is out of
+   view and moves the keyboard focus to it; **Continue anyway** moves on.
+   Qualtrics' own Next button must not be on the page.
 7. Finish the survey.
 
 Record anything that differs from the GRIDDY preview, however small.
@@ -147,16 +148,33 @@ Run the one that matches what changed:
 - **Dropdown per cell** and **Drag and drop**: same design, different input
   method; the output must be identical in form. On a phone, drag with a
   finger; dragging to the grid's edge scrolls it.
-- **Empty cells**: set **If cells are left empty** to **Allow** (Next moves
-  straight on) and to **Require** (only Show me is offered until every cell
-  is filled).
+- **Empty cells**: set **If cells are left empty** to **Allow** (the grid
+  shows no Next of its own and Qualtrics' Next stays) and to **Require**
+  (only Show me is offered until every cell is filled).
 - **Back button**: turn Back on in Qualtrics' **Survey options**, answer the
   grid, go to the next page, come back and go forward again. The grid's
   answers, its pre-fills (even when shuffled or weighted) and its reactions
   must come back unchanged.
 - **Keyboard and screen reader**: Tab to a cell and press Enter; in drag and
   drop, press Enter on a chip to pick it up, then Enter on a cell to place
-  it. A screen reader should read each cell as "Row 1, column 2: Family".
+  it, and Enter on a filled cell's × clears it. With a screen reader on
+  (NVDA, VoiceOver or TalkBack), activate a chip and then a cell; the label
+  must be placed. A screen reader should read each cell as "Row 1, column
+  2: Family", and read the reminder once each time Next is pressed. A mouse
+  click on a chip does nothing; it has to be dragged.
+- **Display logic on the grid's page**: put a Yes/No question above the
+  grid on the same page and give the grid display logic "show if Yes" with
+  **In Page** ticked. Before answering, and with No, Qualtrics' Next must be
+  there and nothing is recorded for the grid; with Yes, the grid appears
+  and its own Next replaces Qualtrics'.
+- **Two grids on one page**: move a second grid question into the first
+  one's block (give it its own field name ending). Only the lower grid
+  shows a Next, and it checks both grids; each grid shows its own reminder.
+- **A page without a grid after the grid**: add a plain question on the
+  next page. Qualtrics' Next must be there.
+- **Field name ending**: in the export dialog, type an ending such as `Q2`.
+  The listed fields, the `.qsf`'s Survey Flow and the copied script must all
+  use `GridAssignments_Q2` (or `GridPrefills_Q2` and `GridResponses_Q2`).
 - **Experiment**: turn on **04 Add an experiment**, pre-fill a few cells,
   add response labels `Like, Dislike`; check `GridPrefills` and
   `GridResponses`.
@@ -170,7 +188,8 @@ Run the one that matches what changed:
   its own page with its own field.
 - **Raw JavaScript**: in the export dialog open **Advanced: view raw
   JavaScript**, copy it, and paste it into a Text/Graphic question's
-  JavaScript in Qualtrics by hand; also declare `GridAssignments` in the
+  JavaScript in Qualtrics by hand; also declare the listed field
+  (`GridAssignments`, or the name with your field name ending) in the
   Survey Flow yourself.
 
 ## Running it with Claude
@@ -214,21 +233,31 @@ responses; the first can replace a saved survey design.
    one survey overwrite each other. Option: when the name changed, or the
    survey was saved elsewhere since it was opened, ask "Replace, or save as
    a new survey?", and add Duplicate to My surveys.
-2. **With "Allow" empty cells, Qualtrics' own Next stays on the page** next
-   to the grid's Next (with Remind or Require it is hidden). Option: always
-   hide it on grid pages.
-3. **Separately exported grids share field names.** Each single-grid export
-   saves to `GridAssignments`, so two of them put into one Qualtrics survey
-   overwrite each other's answers. The export dialog now warns and points to
-   the multi-question page. Option: let the dialog set the field name.
-4. **Response labels offer Layer mode, which does nothing.** Reaction images
+2. **Response labels offer Layer mode, which does nothing.** Reaction images
    always lie over the cell. Option: remove the control for labels, or give
    it the same meaning as for categories.
-5. **The design preview's clicks are only a test.** The tour now says so.
-   Option: a one-line note above the design grid as well.
-6. **An unused multi-step script** (`buildQualtricsMultiQuestionSnippet` in
+3. **The design preview's clicks are only a test**, apart from Block cells
+   and painting an experiment's pre-fills. The tour now says so. Option: a
+   one-line note above the design grid as well.
+4. **An unused multi-step script** (`buildQualtricsMultiQuestionSnippet` in
    `src/lib/qualtricsExport.ts`) is not called by the app and has none of
    the fixes below. Option: delete it.
+5. **The grid's Next sits under the grid.** On a page where other questions
+   follow the grid, Qualtrics' Next at the bottom is hidden and the way on
+   is the grid's Next, above those questions. The `.qsf` gives each grid its
+   own page, and the manual-paste steps say to do the same. Option: move the
+   grid's Next into Qualtrics' button bar (it differs between Qualtrics
+   layouts, so each would need testing).
+6. **Text the grid shows respondents is in English** ("Placing:", "Clear
+   cell", the reminder, "Next"), and Qualtrics' translation tools cannot
+   reach it. Option: make these strings editable in the export, one set per
+   language.
+7. **Who owns the question wording.** When GRIDDY's question text is set,
+   wording edited or translated in the Qualtrics builder is not shown to
+   respondents. Option: show Qualtrics' wording whenever it is not empty.
+8. **Fonts load from Google Fonts**, which tells Google each respondent's IP
+   address. Some ethics boards ask about this. Option: use system fonts, or
+   host the two fonts with the survey.
 
 ## Fixed in November 2026
 
@@ -238,15 +267,26 @@ check when the code around it changes.
 - **Phones:** the grid keeps its designed size and scrolls sideways inside
   its own frame, with a hint and edge arrows (Part D step 5).
 - **Empty cells:** a reminder by default, with Allow and Require options;
-  Qualtrics' Next is hidden while the check is on (Part D step 6).
+  Qualtrics' Next is hidden while the check is on (Part D step 6), and only
+  while the grid is on screen: display logic that hides the grid gives
+  Qualtrics' Next back, several grids on one page share one Next that
+  checks them all, and leaving the page gives Qualtrics' Next back. With
+  Allow, or a grid with nothing to fill, only Qualtrics' Next is shown.
 - **Recorded data:** answers are recorded as soon as the grid is shown, and
   restored on Back or resume with the same pre-fills (Back button
   variation); pre-fills never land on the centre, a barrier or a cell
   outside the grid; reactions only on pre-filled cells; dropped text that
-  is not a label is ignored; a switched-off experiment is not shipped.
-- **Input:** drag and drop works with a finger and from the keyboard;
-  every answerable cell is a focusable, described button; dropdowns are
-  named and keep focus after a choice; larger touch targets.
+  is not a label is ignored; a switched-off experiment is not shipped; a
+  look-only grid records nothing; a grid neither shows nor overwrites
+  answers another question saved under the same field names, and a field
+  name ending in the export dialog keeps two grids' fields apart.
+- **Input:** drag and drop works with a finger, from the keyboard and with
+  a screen reader; a finger resting at an edge keeps the grid scrolling;
+  Enter on a cell's × clears it; every answerable cell is a focusable,
+  described button; the reminder is read out once per press of Next, and
+  Show me focuses the first empty cell out of view; dropdowns are named and
+  keep focus after a choice; larger touch targets; in right-to-left surveys
+  column 1 stays on the left.
 - **Looks as designed:** dropdown cells show category images; Layer mode
   (Front, Behind) is honoured; a background image shows through empty
   cells; long labels wrap instead of being cut; buttons use the grid's
@@ -264,7 +304,8 @@ check when the code around it changes.
   transparent images stay transparent; background images keep enough
   resolution; the error page leads back; the export dialog closes on Escape
   and its steps match today's Qualtrics; picking a category leaves
-  block-cells mode.
+  block-cells mode; Rows and Columns take only whole numbers from 1 to 10;
+  label names saved with spaces at either end are repaired.
 
 ## Findings log
 

@@ -104,7 +104,9 @@ manual setup in Qualtrics.
    in experimental mode. In a multi-question survey each grid gets its own
    fields, named after its data field: `GridAssignments_<name>`, or
    `GridPrefills_<name>` and `GridResponses_<name>`. The multi-question page
-   shows each grid's exact field names. If a field's column isn't shown in
+   shows each grid's exact field names. A grid exported on its own can get
+   a **Field name ending** in the export dialog: `Q2` saves to
+   `GridAssignments_Q2`. If a field's column isn't shown in
    **Data & Analysis**, add it with **Column chooser → Embedded Data**; data
    downloads always include it.
 
@@ -115,8 +117,10 @@ dialog: add an Embedded Data element with the listed field(s) to your Survey
 Flow, add a Text/Graphic question on its own page, and paste the script into
 its JavaScript editor. Unless the grid allows empty cells, it hides Qualtrics'
 Next button on its page and moves on with its own Next. Each grid in a survey
-needs its own fields: to put several grids in one survey, combine them on the
-multi-question page, which names each grid's fields.
+needs its own fields: give each one its own **Field name ending** in the
+export dialog, or combine them on the multi-question page, which names each
+grid's fields. A grid question copied in Qualtrics, or repeated with Loop &
+Merge, would share its fields with the original.
 
 ## Deployment
 

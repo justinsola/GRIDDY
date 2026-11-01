@@ -53,7 +53,7 @@ changes; it is the one place that says where the project stands._
 
 ## Known gaps
 
-- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run seven times on 1 November 2026, on `main` and on the fix branch. `docs/testing-in-qualtrics.md` is the process; PR 17 fixes what the runs and two code reviews found, and the doc's "Open questions" section lists six behaviours for the maintainer to decide.
+- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run seven times on 1 November 2026, on `main` and on the fix branch. `docs/testing-in-qualtrics.md` is the process; PR 17 fixes what the runs and two code reviews found, and the doc's "Open questions" section lists eight behaviours for the maintainer to decide.
 - Tests are unit tests only (export builders, reducer, storage, preview panel). Nothing drives the real UI automatically.
 - The app page has no `description` or social-preview meta tags.
 - Page 7 of the documentation PDF is half blank (cosmetic).
