@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
 import { findFieldCollision } from "../lib/combineFields";
+import { hasUnsavedChanges, useEditor } from "../EditorContext";
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
@@ -14,7 +15,9 @@ import {
  * field name(s). */
 function buildQsfItem(survey: ExportedSurvey, fieldLabel: string): QualtricsQsfItem {
   const fallback = survey.id.slice(0, 8);
-  const base = fieldLabel.trim() || fallback;
+  // A label with no letters or digits would clean up to nothing, leaving
+  // only the shared default name; use the survey's id instead.
+  const base = /[A-Za-z0-9]/.test(fieldLabel) ? fieldLabel.trim() : fallback;
   const isExperimental = !!survey.config.experimental?.enabled;
 
   if (isExperimental) {
@@ -57,6 +60,7 @@ function makeQsfFileName() {
 
 export default function CombineSurveysPage() {
   const navigate = useNavigate();
+  const { state: editorState } = useEditor();
   const [surveys, setSurveys] = useState<ExportedSurvey[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [fieldOverrides, setFieldOverrides] = useState<Record<string, string>>({});
@@ -119,10 +123,18 @@ export default function CombineSurveysPage() {
     [qsfItems, ordered],
   );
 
+  // The file is built from saved surveys. If one of them has edits in the
+  // editor that were never saved, the download would ship the old version.
+  const unsavedEditsError = useMemo(() => {
+    const open = ordered.find((survey) => survey.id === editorState.config.id);
+    if (!open || !hasUnsavedChanges(editorState)) return null;
+    return `"${open.name}" has changes in the editor that are not saved. Save it there first, so this survey uses the version you see.`;
+  }, [ordered, editorState]);
+
   const defaultTitle = `GRIDDY Survey (${ordered.length} grid${ordered.length === 1 ? "" : "s"})`;
 
   const handleDownload = () => {
-    if (ordered.length === 0 || fieldCollisionError) return;
+    if (ordered.length === 0 || fieldCollisionError || unsavedEditsError) return;
 
     setDownloading(true);
     setError(null);
@@ -320,6 +332,9 @@ export default function CombineSurveysPage() {
             </ul>
           )}
 
+          {unsavedEditsError && (
+            <p className="mt-3 text-sm font-semibold text-accent">{unsavedEditsError}</p>
+          )}
           {fieldCollisionError && (
             <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>
           )}
@@ -330,7 +345,9 @@ export default function CombineSurveysPage() {
           <button
             type="button"
             onClick={handleDownload}
-            disabled={downloading || ordered.length === 0 || !!fieldCollisionError}
+            disabled={
+              downloading || ordered.length === 0 || !!fieldCollisionError || !!unsavedEditsError
+            }
             className="rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
           >
             {downloading ? "Preparing…" : "Download .qsf"}

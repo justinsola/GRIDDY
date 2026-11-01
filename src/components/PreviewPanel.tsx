@@ -682,13 +682,20 @@ export const PreviewPanel: React.FC = () => {
               // and bridge the grid gap with box-shadow — shadows paint outside the
               // box and aren't clipped, so this renders identically in Qualtrics.
               const barrierName = layout.blockedCells[cell.exportKey];
-              if (barrierName) {
+              if (barrierName && !cell.isCenter) {
                 const bMeta = layout.barrierMeta?.[barrierName];
                 const bColor = bMeta?.color ?? "#94a3b8";
                 const bImage = bMeta?.imageUrl ?? "";
                 const gap = tuning.gridGap;
                 const radius = 8; // matches rounded-lg
+                const centerRow = layout.centerRow ?? Math.ceil(layout.rows / 2);
+                const centerCol = layout.centerCol ?? Math.ceil(layout.cols / 2);
                 const at = (r: number, c: number) =>
+                  r >= 1 &&
+                  c >= 1 &&
+                  r <= layout.rows &&
+                  c <= layout.cols &&
+                  !(layout.includeCenterCell && r === centerRow && c === centerCol) &&
                   layout.blockedCells[`r${r}-c${c}`] === barrierName;
                 const cUp = at(cell.row - 1, cell.col);
                 const cDown = at(cell.row + 1, cell.col);
@@ -873,7 +880,9 @@ export const PreviewPanel: React.FC = () => {
                               color: "#8a2e3b",
                             }
                           : {
-                              backgroundColor: "#fbf8f1",
+                              backgroundColor: layout.backgroundImageUrl
+                                ? "rgba(251,248,241,0.55)"
+                                : "#fbf8f1",
                               borderStyle: "dashed",
                               borderColor: "#d8cdb8",
                               color: "#2a241c",
@@ -1104,6 +1113,14 @@ export const PreviewPanel: React.FC = () => {
                     <p className="mt-1.5 text-emerald-700">
                       Find them under <strong>Data &amp; Analysis</strong> after
                       collecting responses.
+                    </p>
+                    <p className="mt-1.5 text-emerald-700">
+                      Putting more than one grid in the same Qualtrics survey?
+                      Combine them on <strong>My surveys</strong> &rarr;{" "}
+                      <strong>Make multi-question survey</strong>, so each grid
+                      saves to its own fields. Two grids exported separately
+                      share these field names, and the later one&apos;s answers
+                      would replace the earlier one&apos;s.
                     </p>
                   </div>
                 </section>
