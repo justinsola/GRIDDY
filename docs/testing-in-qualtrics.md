@@ -103,8 +103,10 @@ the file was already wrong before Qualtrics saw it.
    change exactly that cell.
 4. Open the browser console (F12). Nothing from the grid script should be
    logged as an error.
-5. Switch the preview to the mobile view and check that the grid still fits
-   and cells can still be painted.
+5. Switch the preview to the mobile view. The grid must keep its designed
+   size: cells, text and pictures the same as on desktop, never shrunk to
+   fit. Check that the columns beyond the screen can be reached by scrolling
+   sideways, and note whether anything tells the respondent they are there.
 6. Click the grid's own **Next** button (the red one under the grid), then
    finish the survey.
 
