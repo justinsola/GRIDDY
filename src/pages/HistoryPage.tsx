@@ -8,6 +8,7 @@ import {
   loadSurvey,
   SurveyMeta,
   SurveysExportFile,
+  describeImport,
 } from "../lib/surveysApi";
 import { discardChangesMessage, hasUnsavedChanges, useEditor } from "../EditorContext";
 
@@ -128,20 +129,9 @@ export default function HistoryPage() {
         throw new Error("Invalid backup file format. Use a GRIDDY export JSON file.");
       }
 
-      const { importedCount, skippedDuplicateCount } = await importSurveys(
-        parsed.surveys,
-      );
+      const result = await importSurveys(parsed.surveys);
       await refreshSurveys();
-
-      if (importedCount === 0 && skippedDuplicateCount === 0) {
-        setNotice("Backup imported, but it did not contain any surveys.");
-      } else if (skippedDuplicateCount === 0) {
-        setNotice(`Imported ${importedCount} survey${importedCount === 1 ? "" : "s"}.`);
-      } else {
-        setNotice(
-          `Imported ${importedCount} survey${importedCount === 1 ? "" : "s"} and skipped ${skippedDuplicateCount} duplicate${skippedDuplicateCount === 1 ? "" : "s"}.`,
-        );
-      }
+      setNotice(describeImport(result));
     } catch (e) {
       if (e instanceof SyntaxError) {
         setError("Import failed: file is not valid JSON.");

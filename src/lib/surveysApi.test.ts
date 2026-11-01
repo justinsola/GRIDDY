@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { stableStringify, surveyFingerprint } from "./surveysApi";
+import { beforeEach, describe, it, expect } from "vitest";
+import {
+  stableStringify,
+  surveyFingerprint,
+  importSurveys,
+  describeImport,
+} from "./surveysApi";
 import type { GridConfig } from "../grid-types";
 
 // ─── stableStringify ───────────────────────────────────────────────────────────
@@ -137,5 +142,46 @@ describe("surveyFingerprint", () => {
     expect(surveyFingerprint("Survey A", config)).not.toBe(
       surveyFingerprint("Survey B", config),
     );
+  });
+});
+
+// ─── importSurveys: an old backup never overwrites newer work ─────────────────
+
+describe("importSurveys", () => {
+  const KEY = "griddy.localSurveys.v1";
+  const stored = (updatedAt: string, rows: number) => {
+    const base = makeConfig({ id: "s1", name: "Map" });
+    return {
+      id: "s1",
+      name: "Map",
+      created_at: "2026-10-01T00:00:00.000Z",
+      updated_at: updatedAt,
+      config: { ...base, layout: { ...base.layout, rows } },
+    };
+  };
+
+  beforeEach(() => window.localStorage.clear());
+
+  it("keeps the local copy when the backup's copy of the same survey is older", async () => {
+    window.localStorage.setItem(KEY, JSON.stringify([stored("2026-11-01T12:00:00.000Z", 5)]));
+    const result = await importSurveys([stored("2026-10-15T12:00:00.000Z", 3)]);
+    expect(result).toEqual({ importedCount: 0, updatedCount: 0, keptNewerCount: 1, skippedDuplicateCount: 0 });
+    expect(JSON.parse(window.localStorage.getItem(KEY)!)[0].config.layout.rows).toBe(5);
+  });
+
+  it("takes the backup's copy when it is newer", async () => {
+    window.localStorage.setItem(KEY, JSON.stringify([stored("2026-10-15T12:00:00.000Z", 3)]));
+    const result = await importSurveys([stored("2026-11-01T12:00:00.000Z", 5)]);
+    expect(result).toEqual({ importedCount: 0, updatedCount: 1, keptNewerCount: 0, skippedDuplicateCount: 0 });
+    expect(JSON.parse(window.localStorage.getItem(KEY)!)[0].config.layout.rows).toBe(5);
+  });
+
+  it("tells the researcher what happened", () => {
+    expect(
+      describeImport({ importedCount: 2, updatedCount: 0, keptNewerCount: 1, skippedDuplicateCount: 1 }),
+    ).toBe("Imported 2 surveys, kept your newer copy of 1 survey and skipped 1 duplicate.");
+    expect(
+      describeImport({ importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 0 }),
+    ).toBe("Backup imported, but it did not contain any surveys.");
   });
 });
