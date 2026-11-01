@@ -822,6 +822,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			draggedCategory = null;
 		};
 
+		enableTouchDrag(chip, isClear ? "__CLEAR__" : catName, false);
 		return chip;
 	}
 
@@ -856,7 +857,96 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			draggedResponseLabel = null;
 		};
 
+		enableTouchDrag(chip, isClear ? "__CLEAR_RESP__" : lbl, true);
 		return chip;
+	}
+
+	// Touch screens. HTML5 drag and drop does not start from a finger on many
+	// phones, and on others only after an unannounced long press, so a finger
+	// drags a copy of the chip instead and drops it on the cell under it. The
+	// interaction stays a drag; mouse drags still use the browser's own drag
+	// and drop. The cell handlers below do the actual work, so both paths
+	// validate and save answers the same way.
+	var touchDrag = null;
+
+	function cellUnder(x, y) {
+		var node = typeof document.elementFromPoint === "function" ? document.elementFromPoint(x, y) : null;
+		while (node && node !== document.body) {
+			for (var k in cellEls) {
+				if (cellEls[k] === node) return node;
+			}
+			node = node.parentNode;
+		}
+		return null;
+	}
+
+	function touchDragEvent(value) {
+		return {
+			preventDefault: function () {},
+			dataTransfer: { getData: function () { return value; }, setData: function () {}, dropEffect: "move" }
+		};
+	}
+
+	function enableTouchDrag(chip, value, isResponse) {
+		chip.style.touchAction = "none";
+		chip.addEventListener("pointerdown", function (e) {
+			if (e.pointerType === "mouse" || touchDrag) return;
+			e.preventDefault();
+			chip.draggable = false;
+			var ghost = chip.cloneNode(true);
+			ghost.style.position = "fixed";
+			ghost.style.left = (e.clientX - 20) + "px";
+			ghost.style.top = (e.clientY - 20) + "px";
+			ghost.style.pointerEvents = "none";
+			ghost.style.opacity = "0.85";
+			ghost.style.zIndex = "2147483647";
+			ghost.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)";
+			document.body.appendChild(ghost);
+			touchDrag = { chip: chip, ghost: ghost, over: null };
+			if (isResponse) draggedResponseLabel = value;
+			else draggedCategory = value;
+			if (typeof chip.setPointerCapture === "function") {
+				try { chip.setPointerCapture(e.pointerId); } catch (err) { /* already released */ }
+			}
+		});
+		chip.addEventListener("pointermove", function (e) {
+			if (!touchDrag || touchDrag.chip !== chip) return;
+			e.preventDefault();
+			touchDrag.ghost.style.left = (e.clientX - 20) + "px";
+			touchDrag.ghost.style.top = (e.clientY - 20) + "px";
+			// Near an edge, scroll the grid sideways or the page up or down so
+			// every cell can be reached while dragging.
+			var view = scroller.getBoundingClientRect();
+			if (e.clientY > view.top && e.clientY < view.bottom) {
+				if (e.clientX < view.left + 40) scroller.scrollLeft -= 12;
+				else if (e.clientX > view.right - 40) scroller.scrollLeft += 12;
+			}
+			if (e.clientY < 40) window.scrollBy(0, -12);
+			else if (e.clientY > window.innerHeight - 40) window.scrollBy(0, 12);
+			var target = cellUnder(e.clientX, e.clientY);
+			if (target !== touchDrag.over) {
+				if (touchDrag.over && touchDrag.over.ondragleave) touchDrag.over.ondragleave(touchDragEvent(value));
+				touchDrag.over = target;
+				if (target && target.ondragover) target.ondragover(touchDragEvent(value));
+			}
+		});
+		function finish(e, drop) {
+			if (!touchDrag || touchDrag.chip !== chip) return;
+			var state = touchDrag;
+			touchDrag = null;
+			if (state.ghost.parentNode) state.ghost.parentNode.removeChild(state.ghost);
+			chip.draggable = true;
+			var target = drop ? cellUnder(e.clientX, e.clientY) : null;
+			if (target && target.ondrop) {
+				target.ondrop(touchDragEvent(value));
+			} else if (state.over && state.over.ondragleave) {
+				state.over.ondragleave(touchDragEvent(value));
+			}
+			if (isResponse) draggedResponseLabel = null;
+			else draggedCategory = null;
+		}
+		chip.addEventListener("pointerup", function (e) { finish(e, true); });
+		chip.addEventListener("pointercancel", function (e) { finish(e, false); });
 	}
 
 	var questionText = document.createElement("p");

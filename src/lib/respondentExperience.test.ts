@@ -312,6 +312,52 @@ describe("drag and drop", () => {
   });
 });
 
+describe("drag and drop on touch screens", () => {
+  function fingerDrag(chip: HTMLElement, target: HTMLElement, pointerType = "touch") {
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    const fire = (type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 120, clientY: 300 });
+      Object.defineProperty(event, "pointerType", { value: pointerType });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      chip.dispatchEvent(event);
+    };
+    try {
+      fire("pointerdown");
+      fire("pointermove");
+      fire("pointerup");
+    } finally {
+      document.elementFromPoint = original;
+    }
+  }
+
+  const ghosts = () =>
+    Array.from(document.body.children).filter(
+      (el) => (el as HTMLElement).style.position === "fixed",
+    );
+
+  it("drops a label on the cell where the finger lifts", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    fingerDrag(button(r.container, "Friends"), cells(r.container)[0]);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    expect(ghosts()).toHaveLength(0);
+  });
+
+  it("drops a reaction only on a pre-filled cell", () => {
+    const r = run(experimental({}, withSurvey({ selectionMode: "dragdrop" })));
+    fingerDrag(button(r.container, "Agree"), cells(r.container)[1]); // no pre-fill
+    expect(JSON.parse(r.embedded.GridResponses)).toEqual({});
+    fingerDrag(button(r.container, "Agree"), cells(r.container)[0]); // shows Family
+    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c1": "Agree" });
+  });
+
+  it("leaves mouse drags to the browser's own drag and drop", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    fingerDrag(button(r.container, "Friends"), cells(r.container)[0], "mouse");
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+  });
+});
+
 describe("image URLs", () => {
   it("keeps a background image whose URL contains an apostrophe", () => {
     const base = makeConfig();
