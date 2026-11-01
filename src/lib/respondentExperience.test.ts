@@ -401,6 +401,47 @@ describe("drag and drop on touch screens", () => {
   });
 });
 
+describe("keyboard and screen readers", () => {
+  const press = (el: HTMLElement, key = "Enter") =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+  it("makes answerable cells focusable buttons that say what they hold", () => {
+    const grid = cells(run(makeConfig()).container);
+    expect(grid[0].tabIndex).toBe(0);
+    expect(grid[0].getAttribute("role")).toBe("button");
+    expect(grid[0].getAttribute("aria-label")).toBe("Row 1, column 1: empty");
+    expect(grid[4].getAttribute("role")).toBeNull(); // the centre cell
+  });
+
+  it("places the active label with Enter and updates the description", () => {
+    const r = run(makeConfig());
+    const first = cells(r.container)[0];
+    press(first);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(first.getAttribute("aria-label")).toBe("Row 1, column 1: Family");
+  });
+
+  it("lets drag-and-drop be done from the keyboard: pick up a chip, then place it", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }));
+    const chip = button(r.container, "Friends");
+    press(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    press(cells(r.container)[2]);
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c3": "Friends" });
+  });
+
+  it("names every dropdown", () => {
+    const grid = cells(run(withSurvey({ selectionMode: "dropdown" })).container);
+    expect(grid[0].querySelector("select")!.getAttribute("aria-label")).toBe("Label for row 1, column 1");
+  });
+
+  it("only makes pre-filled cells answerable in an experiment", () => {
+    const grid = cells(run(experimental()).container);
+    expect(grid[0].getAttribute("aria-label")).toBe("Row 1, column 1: Family, no reaction yet");
+    expect(grid[1].getAttribute("role")).toBeNull();
+  });
+});
+
 describe("fonts and long labels", () => {
   it("makes buttons and selects use the grid's font and lets long words wrap", () => {
     const r = run(makeConfig());

@@ -102,7 +102,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	if (!document.getElementById("griddy-styles")) {
 		var griddyStyles = document.createElement("style");
 		griddyStyles.id = "griddy-styles";
-		griddyStyles.textContent = "[data-griddy-root] button, [data-griddy-root] select { font-family: inherit; } [data-griddy-grid] div { overflow-wrap: anywhere; }";
+		griddyStyles.textContent = "[data-griddy-root] button, [data-griddy-root] select { font-family: inherit; } [data-griddy-grid] div { overflow-wrap: anywhere; } [data-griddy-grid] [role=button]:focus-visible { box-shadow: 0 0 0 3px #1d4ed8; }";
 		document.head.appendChild(griddyStyles);
 	}
 	container.setAttribute("data-griddy-root", "");
@@ -274,6 +274,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(embeddedDataField)}, JSON.stringify(assignments));
 		}
 		if (reminderShown) onAnswersChanged();
+		refreshCellLabels();
 	}
 
 	// Pre-fills only go in cells of the current grid that can hold one: not a
@@ -516,6 +517,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			bottomDiv.style.flexShrink = "0";
 			bottomDiv.style.padding = "2px";
 			var select = document.createElement("select");
+			select.setAttribute("aria-label", "Reaction to " + catName + " in " + rowColText(key));
 			select.style.width = "100%";
 			select.style.border = "1px solid #e2dccf";
 			select.style.borderRadius = "4px";
@@ -748,6 +750,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 
 		var select = document.createElement("select");
+		select.setAttribute("aria-label", "Label for " + rowColText(key));
 		select.style.width = "100%";
 		select.style.minWidth = "0";
 		select.style.flexShrink = "0";
@@ -914,6 +917,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		};
 
 		enableTouchDrag(chip, isClear ? "__CLEAR__" : catName, false);
+		enableKeyboardPick(chip, isClear ? "__CLEAR__" : catName);
 		return chip;
 	}
 
@@ -949,6 +953,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		};
 
 		enableTouchDrag(chip, isClear ? "__CLEAR_RESP__" : lbl, true);
+		enableKeyboardPick(chip, isClear ? "__CLEAR_RESP__" : lbl);
 		return chip;
 	}
 
@@ -976,6 +981,82 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			preventDefault: function () {},
 			dataTransfer: { getData: function () { return value; }, setData: function () {}, dropEffect: "move" }
 		};
+	}
+
+	// Keyboard and screen readers. Every cell a respondent can act on is a
+	// focusable button that says what it holds; Enter or Space does what a
+	// click does. In drag-and-drop mode, Enter on a chip picks its label up
+	// and Enter on a cell places it, so the grid can be answered without a
+	// pointer.
+	var keyboardPick = null;
+	var keyboardPickChip = null;
+
+	function rowColText(key) {
+		var parts = key.slice(1).split("-c");
+		return "row " + parts[0] + ", column " + parts[1];
+	}
+
+	function describeCell(key) {
+		var text = rowColText(key) + ": ";
+		if (isExperimental) {
+			text += prefills[key] || "empty";
+			if (experimentalResponses[key]) text += ", reaction " + experimentalResponses[key];
+			else if (prefills[key]) text += ", no reaction yet";
+		} else {
+			text += assignments[key] || "empty";
+		}
+		return text.charAt(0).toUpperCase() + text.slice(1);
+	}
+
+	function cellIsActionable(key, isCenterCell, isBlockedCell) {
+		if (isCenterCell || isBlockedCell || selectionMode === "dropdown") return false;
+		if (isExperimental) return responseLabels.length > 0 && !!prefills[key];
+		return allowInteraction && categories.length > 0;
+	}
+
+	function refreshCellLabels() {
+		Object.keys(cellEls).forEach(function (k) {
+			if (cellEls[k].getAttribute("role") === "button") {
+				cellEls[k].setAttribute("aria-label", describeCell(k));
+			}
+		});
+	}
+
+	function makeCellAccessible(cellRef, key, isCenterCell, isBlockedCell) {
+		if (!cellIsActionable(key, isCenterCell, isBlockedCell)) return;
+		cellRef.tabIndex = 0;
+		cellRef.setAttribute("role", "button");
+		cellRef.setAttribute("aria-label", describeCell(key));
+		cellRef.addEventListener("keydown", function (e) {
+			if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+			e.preventDefault();
+			if (selectionMode === "dragdrop") {
+				if (keyboardPick !== null && cellRef.ondrop) cellRef.ondrop(touchDragEvent(keyboardPick));
+			} else if (cellRef.onclick) {
+				cellRef.onclick();
+			}
+		});
+	}
+
+	function enableKeyboardPick(chip, value) {
+		chip.setAttribute("aria-pressed", "false");
+		chip.setAttribute("aria-label", chip.textContent + ". Press Enter to pick it up, then Enter on a cell to place it.");
+		chip.addEventListener("keydown", function (e) {
+			if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+			e.preventDefault();
+			var wasPicked = keyboardPickChip === chip;
+			if (keyboardPickChip) {
+				keyboardPickChip.setAttribute("aria-pressed", "false");
+				keyboardPickChip.style.outline = "";
+			}
+			keyboardPick = null;
+			keyboardPickChip = null;
+			if (wasPicked) return;
+			keyboardPick = value;
+			keyboardPickChip = chip;
+			chip.setAttribute("aria-pressed", "true");
+			chip.style.outline = "2px solid #8a2e3b";
+		});
 	}
 
 	function enableTouchDrag(chip, value, isResponse) {
@@ -1070,6 +1151,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			var btn = document.createElement("button");
 			btn.type = "button";
 			btn.dataset.cat = cat;
+			btn.setAttribute("aria-pressed", cat === activeCategory ? "true" : "false");
 			btn.style.display = "inline-flex";
 			btn.style.alignItems = "center";
 			btn.style.gap = "4px";
@@ -1097,6 +1179,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					var otherMeta = getCategoryMeta(other.dataset.cat);
 					var otherColor = otherMeta.color || "#60a5fa";
 					var isActive = other.dataset.cat === cat;
+					other.setAttribute("aria-pressed", isActive ? "true" : "false");
 					other.style.backgroundColor = isActive ? hexToRgba(otherColor, 0.15) : "#fbf8f1";
 					other.style.borderColor = isActive ? otherColor : "#e2dccf";
 				});
@@ -1157,6 +1240,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			var btn = document.createElement("button");
 			btn.type = "button";
 			btn.dataset.resp = lbl;
+			btn.setAttribute("aria-pressed", lbl === activeResponseLabel ? "true" : "false");
 			btn.style.display = "inline-flex";
 			btn.style.alignItems = "center";
 			btn.style.gap = "4px";
@@ -1184,6 +1268,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					var otherMeta = getResponseMeta(other.dataset.resp);
 					var otherColor = otherMeta.color || "#8b5cf6";
 					var isActive = other.dataset.resp === lbl;
+					other.setAttribute("aria-pressed", isActive ? "true" : "false");
 					other.style.backgroundColor = isActive ? hexToRgba(otherColor, 0.15) : "#fbf8f1";
 					other.style.borderColor = isActive ? otherColor : "#e2dccf";
 				});
@@ -1396,6 +1481,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			})(cell, key, isCenter);
 		}
 
+		makeCellAccessible(cell, key, isCenter, isBlocked);
 		grid.appendChild(cell);
 	}
 
