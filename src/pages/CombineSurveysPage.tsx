@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
+import { findFieldCollision } from "../lib/combineFields";
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
@@ -113,21 +114,10 @@ export default function CombineSurveysPage() {
     [ordered, fieldOverrides],
   );
 
-  const fieldCollisionError = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (let i = 0; i < qsfItems.length; i++) {
-      const item = qsfItems[i];
-      const title = ordered[i]?.name || `Question ${i + 1}`;
-      for (const field of qsfEmbeddedFields(item)) {
-        const claimedBy = seen.get(field);
-        if (claimedBy && claimedBy !== title) {
-          return `"${title}" and "${claimedBy}" both write to the field "${field}". Give one of them a different data field name.`;
-        }
-        seen.set(field, title);
-      }
-    }
-    return null;
-  }, [qsfItems, ordered]);
+  const fieldCollisionError = useMemo(
+    () => findFieldCollision(qsfItems, ordered.map((survey) => survey.name)),
+    [qsfItems, ordered],
+  );
 
   const defaultTitle = `GRIDDY Survey (${ordered.length} grid${ordered.length === 1 ? "" : "s"})`;
 
