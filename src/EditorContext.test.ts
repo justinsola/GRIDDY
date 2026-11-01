@@ -3,6 +3,7 @@ import {
   syncCategoryMeta,
   editorReducer,
   normalizeConfig,
+  hasUnsavedChanges,
   encodeNamesCsv,
   splitCsvPreservingBlanks,
 } from "./EditorContext";
@@ -82,7 +83,8 @@ function makeBaseConfig(): GridConfig {
 }
 
 function makeState(config?: GridConfig) {
-  return { config: config ?? makeBaseConfig(), savedSurveyId: null };
+  const c = config ?? makeBaseConfig();
+  return { config: c, savedSurveyId: null, savedSnapshot: JSON.stringify(c) };
 }
 
 // ─── syncCategoryMeta ─────────────────────────────────────────────────────────
@@ -391,5 +393,27 @@ describe("skip behaviour (what happens when cells are left empty)", () => {
     const config = makeBaseConfig();
     config.survey.skipBehavior = "force";
     expect(normalizeConfig(config).survey.skipBehavior).toBe("force");
+  });
+});
+
+// ─── Unsaved changes ──────────────────────────────────────────────────────────
+
+describe("unsaved changes", () => {
+  it("is clean when a survey is started or saved, and dirty after an edit", () => {
+    let state = editorReducer(makeState(), { type: "newSurvey" });
+    expect(hasUnsavedChanges(state)).toBe(false);
+    state = editorReducer(state, { type: "updateLayout", patch: { rows: 5 } });
+    expect(hasUnsavedChanges(state)).toBe(true);
+    state = editorReducer(state, { type: "markSaved" });
+    expect(hasUnsavedChanges(state)).toBe(false);
+  });
+
+  it("counts a renamed survey as an unsaved edit", () => {
+    const state = makeState();
+    const renamed = editorReducer(state, {
+      type: "setConfig",
+      config: { ...state.config, name: "Renamed" },
+    });
+    expect(hasUnsavedChanges(renamed)).toBe(true);
   });
 });

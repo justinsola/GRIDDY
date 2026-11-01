@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
-import React, { createContext, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import {
   CategoryMeta,
   ExperimentalConfig,
@@ -172,6 +172,8 @@ export function normalizeConfig(config: GridConfig): GridConfig {
 interface EditorState {
   config: GridConfig;
   savedSurveyId: string | null;
+  /** The config as last saved, opened or started, to tell whether there are unsaved edits. */
+  savedSnapshot: string;
 }
 
 type EditorAction =
@@ -237,9 +239,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "setConfig":
       return { ...state, config: normalizeConfig(action.config) };
     case "markSaved":
-      return { ...state, savedSurveyId: state.config.id };
-    case "newSurvey":
-      return { config: createDefaultConfig(), savedSurveyId: null };
+      return { ...state, savedSurveyId: state.config.id, savedSnapshot: JSON.stringify(state.config) };
+    case "newSurvey": {
+      const config = createDefaultConfig();
+      return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config) };
+    }
     case "updateLayout": {
       const mergedLayout = { ...state.config.layout, ...action.patch };
       if (action.patch.barriersCsv !== undefined) {
@@ -340,13 +344,38 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
   }
 }
 
+/** True when the survey in the editor differs from how it was last saved or opened. */
+export function hasUnsavedChanges(state: Pick<EditorState, "config" | "savedSnapshot">): boolean {
+  return JSON.stringify(state.config) !== state.savedSnapshot;
+}
+
+/** The question asked before unsaved edits would be thrown away. */
+export function discardChangesMessage(name: string): string {
+  const title = name.trim();
+  return `Discard your unsaved changes${title ? ` to "${title}"` : ""}? This cannot be undone.`;
+}
+
+function initialEditorState(): EditorState {
+  const config = createDefaultConfig();
+  return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config) };
+}
+
 export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [state, dispatch] = useReducer(editorReducer, {
-    config: createDefaultConfig(),
-    savedSurveyId: null,
-  });
+  const [state, dispatch] = useReducer(editorReducer, undefined, initialEditorState);
+
+  // Ask before a reload or closing the tab throws away unsaved edits.
+  const unsaved = hasUnsavedChanges(state);
+  useEffect(() => {
+    if (!unsaved) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [unsaved]);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
 

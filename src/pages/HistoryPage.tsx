@@ -9,7 +9,7 @@ import {
   SurveyMeta,
   SurveysExportFile,
 } from "../lib/surveysApi";
-import { useEditor } from "../EditorContext";
+import { discardChangesMessage, hasUnsavedChanges, useEditor } from "../EditorContext";
 
 function isValidExportFile(value: unknown): value is SurveysExportFile {
   if (!value || typeof value !== "object") return false;
@@ -34,7 +34,7 @@ function makeExportFileName() {
 }
 
 export default function HistoryPage() {
-  const { dispatch } = useEditor();
+  const { state, dispatch } = useEditor();
   const navigate = useNavigate();
   const [surveys, setSurveys] = useState<SurveyMeta[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -61,6 +61,9 @@ export default function HistoryPage() {
   }, []);
 
   const handleOpen = async (id: string) => {
+    if (hasUnsavedChanges(state) && !window.confirm(discardChangesMessage(state.config.name))) {
+      return;
+    }
     try {
       const config = await loadSurvey(id);
       dispatch({ type: "setConfig", config });
@@ -151,6 +154,8 @@ export default function HistoryPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const name = surveys.find((s) => s.id === id)?.name ?? "this survey";
+    if (!window.confirm(`Delete "${name}" from this browser? This cannot be undone.`)) return;
     try {
       await deleteSurvey(id);
       setSurveys((prev) => prev.filter((s) => s.id !== id));
