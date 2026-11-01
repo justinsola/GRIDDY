@@ -465,7 +465,7 @@ describe("blocked cells in the exported grid", () => {
 
   it("skips interaction handlers for blocked cells", () => {
     const js = buildQualtricsSnippet(config);
-    expect(js).toContain("var isBlocked = !!blockedCells[key];");
+    expect(js).toContain("var isBlocked = !isCenter && !!blockedCells[key];");
     expect(js).toContain('selectionMode === "paint" && !isBlocked');
     expect(js).toContain('selectionMode === "dragdrop" && !isBlocked');
   });

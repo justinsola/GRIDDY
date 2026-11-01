@@ -86,6 +86,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var container = this.getQuestionTextContainer();
 	if (!container) return;
 
+	// The question as written in Qualtrics, kept for when GRIDDY's own
+	// question text is blank.
+	var qualtricsQuestionHtml = container.innerHTML;
 	container.innerHTML = "";
 	container.style.fontFamily = "'Hanken Grotesk', sans-serif";
 	container.style.color = "#2a241c";
@@ -149,6 +152,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	// Structural barriers (walls): blocked cells are non-interactive in every mode.
 	var blockedCells = (cfg.layout && cfg.layout.blockedCells) || {};
+	// With a background image (a map, say), empty cells are see-through so
+	// respondents can use it to decide where to place things.
+	var emptyCellFill = cfg.layout && cfg.layout.backgroundImageUrl ? "rgba(251,248,241,0.55)" : "#fbf8f1";
 	var barrierMeta = (cfg.layout && cfg.layout.barrierMeta) || {};
 
 	if (surveyCfg.categoriesCsv) {
@@ -220,6 +226,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		// larger grid would otherwise draw bridges out past the frame.
 		function at(r, c) {
 			if (r < 1 || c < 1 || r > cfg.layout.rows || c > cfg.layout.cols) return false;
+			if (cfg.layout.includeCenterCell && r === centerRowVal && c === centerColVal) return false;
 			return blockedCells["r" + r + "-c" + c] === name;
 		}
 		var cUp = at(row - 1, col);
@@ -295,6 +302,43 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var c = parseInt(parts[1], 10);
 		if (!(r >= 1 && r <= cfg.layout.rows && c >= 1 && c <= cfg.layout.cols)) return false;
 		return !(cfg.layout.includeCenterCell && r === centerRow && c === centerCol);
+	}
+
+	// Answers already recorded in this response: going Back to this page, or
+	// resuming a saved response, shows the grid as it was left (and the same
+	// pre-fills), instead of an empty grid that would overwrite them.
+	function readSavedField(field) {
+		try {
+			var engine = Qualtrics.SurveyEngine;
+			var raw = typeof engine.getEmbeddedData === "function" ? engine.getEmbeddedData(field) : "";
+			if (!raw || typeof raw !== "string") return null;
+			var parsed = JSON.parse(raw);
+			return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	// Returns true when the pre-fills came from the response, so they are not
+	// drawn again.
+	function restoreSavedAnswers(centerRow, centerCol) {
+		if (isExperimental) {
+			var shown = readSavedField(${JSON.stringify(prefillsField)});
+			if (!shown || Object.keys(shown).length === 0) return false;
+			Object.keys(shown).forEach(function (k) {
+				if (typeof shown[k] === "string" && isPrefillable(k, centerRow, centerCol)) prefills[k] = shown[k];
+			});
+			var reactions = readSavedField(${JSON.stringify(responsesField)}) || {};
+			Object.keys(reactions).forEach(function (k) {
+				if (prefills[k] && responseLabels.indexOf(reactions[k]) !== -1) experimentalResponses[k] = reactions[k];
+			});
+			return true;
+		}
+		var saved = readSavedField(${JSON.stringify(embeddedDataField)}) || {};
+		Object.keys(saved).forEach(function (k) {
+			if (categories.indexOf(saved[k]) !== -1 && isPrefillable(k, centerRow, centerCol)) assignments[k] = saved[k];
+		});
+		return false;
 	}
 
 	function computePrefills(totalCells, centerRow, centerCol) {
@@ -373,7 +417,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		topDiv.style.display = "flex";
 		topDiv.style.flexDirection = "column";
 		topDiv.style.overflow = "hidden";
-		topDiv.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
+		topDiv.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : emptyCellFill;
 		topDiv.style.borderBottom = catColor ? ("1px solid " + hexToRgba(catColor, 0.4)) : "1px solid #e2dccf";
 
 		if (catName && catImage && (meta.layerMode === "front" || meta.layerMode === "behind")) {
@@ -437,7 +481,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			topDiv.appendChild(emptyDiv);
 		}
 
-		cellRef.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : "#fbf8f1";
+		cellRef.style.backgroundColor = catColor ? hexToRgba(catColor, 0.2) : emptyCellFill;
 		cellRef.style.borderColor = catColor || "#e2dccf";
 		if (catName && catImage && meta.layerMode === "front") {
 			cellRef.style.backgroundColor = "transparent";
@@ -486,8 +530,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					oLabel.style.overflow = "hidden";
 					oLabel.style.textOverflow = "ellipsis";
 					oLabel.style.padding = "0 2px 1px";
-					oLabel.style.color = respColor;
-					oLabel.style.backgroundColor = hexToRgba(respColor, 0.15);
+					oLabel.style.color = "#2a241c";
+					oLabel.style.backgroundColor = hexToRgba(respColor, 0.3);
 					oLabel.style.borderTop = "1px solid " + hexToRgba(respColor, 0.4);
 					oLabel.style.zIndex = "11";
 					cellRef.appendChild(oLabel);
@@ -500,7 +544,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					band.style.alignItems = "center";
 					band.style.overflow = "hidden";
 					band.style.padding = "0 2px 2px";
-					band.style.backgroundColor = hexToRgba(respColor, 0.15);
+					band.style.backgroundColor = hexToRgba(respColor, 0.3);
 					band.style.borderTop = "1px solid " + hexToRgba(respColor, 0.4);
 					var rText = document.createElement("div");
 					rText.textContent = placed;
@@ -512,7 +556,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 					rText.style.whiteSpace = "nowrap";
 					rText.style.overflow = "hidden";
 					rText.style.textOverflow = "ellipsis";
-					rText.style.color = respColor;
+					rText.style.color = "#2a241c";
 					band.appendChild(rText);
 					cellRef.appendChild(band);
 				}
@@ -619,7 +663,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		cellRef.style.alignItems = "stretch";
 		cellRef.style.justifyContent = "center";
 		cellRef.style.overflow = "hidden";
-		cellRef.style.backgroundColor = isCenterCell ? "#f7ece9" : "#fbf8f1";
+		cellRef.style.backgroundColor = isCenterCell ? "#f7ece9" : emptyCellFill;
 		cellRef.style.borderColor = isCenterCell ? "#8a2e3b" : "#e2dccf";
 		cellRef.style.color = "#2a241c";
 	}
@@ -788,6 +832,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			}
 			persistAll();
 			renderCell(cellRef, key, isCenterCell);
+			// Rebuilding the cell replaced this dropdown; keep keyboard focus on it.
+			var replacement = cellRef.querySelector("select");
+			if (replacement) replacement.focus();
 		};
 
 		cellRef.appendChild(select);
@@ -795,7 +842,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	function renderCell(cellRef, key, isCenterCell) {
 		var barrierName = blockedCells[key];
-		if (barrierName) {
+		if (barrierName && !isCenterCell) {
 			// Parse "r{row}-c{col}" without a regex (regex escapes don't survive
 			// this template string). key.slice(1) drops the leading "r".
 			var parts = key.slice(1).split("-c");
@@ -849,8 +896,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		delBtn.style.position = "absolute";
 		delBtn.style.top = "2px";
 		delBtn.style.right = "2px";
-		delBtn.style.width = "14px";
-		delBtn.style.height = "14px";
+		delBtn.style.width = "20px";
+		delBtn.style.height = "20px";
 		delBtn.style.lineHeight = "1";
 		delBtn.style.display = "flex";
 		delBtn.style.alignItems = "center";
@@ -1127,8 +1174,13 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		chip.addEventListener("pointercancel", function (e) { finish(e, false); });
 	}
 
-	var questionText = document.createElement("p");
-	questionText.textContent = cfg.layout.questionText;
+	var questionText = document.createElement(cfg.layout.questionText ? "p" : "div");
+	if (cfg.layout.questionText) {
+		questionText.textContent = cfg.layout.questionText;
+	} else {
+		// No question in GRIDDY: show the wording written in Qualtrics.
+		questionText.innerHTML = qualtricsQuestionHtml;
+	}
 	questionText.style.marginBottom = "8px";
 	questionText.style.fontFamily = "'Source Serif 4', serif";
 	questionText.style.fontSize = "17px";
@@ -1148,7 +1200,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		toolbarLabel.textContent = "Placing:";
 		toolbarLabel.style.fontSize = "11px";
 		toolbarLabel.style.fontWeight = "600";
-		toolbarLabel.style.color = "#8a8170";
+		toolbarLabel.style.color = "#6b6455";
 		toolbar.appendChild(toolbarLabel);
 
 		categories.forEach(function (cat) {
@@ -1163,7 +1215,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			btn.style.gap = "4px";
 			btn.style.borderRadius = "9999px";
 			btn.style.border = cat === activeCategory ? "1px solid " + color : "1px solid #e2dccf";
-			btn.style.padding = "2px 8px";
+			btn.style.padding = "4px 10px";
 			btn.style.fontSize = "11px";
 			btn.style.backgroundColor = cat === activeCategory ? hexToRgba(color, 0.15) : "#fbf8f1";
 			btn.style.color = "#2a241c";
@@ -1208,7 +1260,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		dragLabel.textContent = "Drag a label onto a cell:";
 		dragLabel.style.fontSize = "11px";
 		dragLabel.style.fontWeight = "600";
-		dragLabel.style.color = "#8a8170";
+		dragLabel.style.color = "#6b6455";
 		dragHelp.appendChild(dragLabel);
 
 		var dragTray = document.createElement("div");
@@ -1237,7 +1289,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respToolbarLabel.textContent = "Reacting:";
 		respToolbarLabel.style.fontSize = "11px";
 		respToolbarLabel.style.fontWeight = "600";
-		respToolbarLabel.style.color = "#8a8170";
+		respToolbarLabel.style.color = "#6b6455";
 		respToolbar.appendChild(respToolbarLabel);
 
 		responseLabels.forEach(function (lbl) {
@@ -1252,7 +1304,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			btn.style.gap = "4px";
 			btn.style.borderRadius = "9999px";
 			btn.style.border = lbl === activeResponseLabel ? "1px solid " + color : "1px solid #e2dccf";
-			btn.style.padding = "2px 8px";
+			btn.style.padding = "4px 10px";
 			btn.style.fontSize = "11px";
 			btn.style.backgroundColor = lbl === activeResponseLabel ? hexToRgba(color, 0.15) : "#fbf8f1";
 			btn.style.color = "#2a241c";
@@ -1297,7 +1349,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respDragLabel.textContent = "Drag a reaction onto a cell:";
 		respDragLabel.style.fontSize = "11px";
 		respDragLabel.style.fontWeight = "600";
-		respDragLabel.style.color = "#8a8170";
+		respDragLabel.style.color = "#6b6455";
 		respDragHelp.appendChild(respDragLabel);
 
 		var respDragTray = document.createElement("div");
@@ -1318,7 +1370,9 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var centerRowVal = cfg.layout.centerRow || Math.ceil(cfg.layout.rows / 2);
 	var centerColVal = cfg.layout.centerCol || Math.ceil(cfg.layout.cols / 2);
 	var centerKey = cfg.layout.includeCenterCell ? "r" + centerRowVal + "-c" + centerColVal : null;
-	computePrefills(totalCellsCount, centerRowVal, centerColVal);
+	if (!restoreSavedAnswers(centerRowVal, centerColVal)) {
+		computePrefills(totalCellsCount, centerRowVal, centerColVal);
+	}
 	// Record what this respondent was shown straight away, so a random
 	// pre-fill is saved even if they never react, and an untouched grid
 	// records an empty answer ("{}") instead of nothing.
@@ -1356,7 +1410,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var col = (i % cfg.layout.cols) + 1;
 		var isCenter = cfg.layout.includeCenterCell && row === centerRowVal && col === centerColVal;
 		var key = "r" + row + "-c" + col;
-		var isBlocked = !!blockedCells[key];
+		var isBlocked = !isCenter && !!blockedCells[key];
 		var cell = document.createElement("div");
 		cellEls[key] = cell;
 		cell.style.borderRadius = "0.375rem";
@@ -1851,6 +1905,14 @@ export interface QualtricsQsfItem {
   responsesField?: string;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function isExperimentalConfig(config: GridConfig): boolean {
   return !!(config.experimental && config.experimental.enabled);
 }
@@ -1937,8 +1999,14 @@ export function buildQualtricsQsf(
         })
       : buildQualtricsSnippet(item.config, { embeddedDataField: fields[0] });
 
+    // The grid script draws the question itself. Qualtrics shows QuestionText
+    // (HTML) in its builder and for a moment before the script runs, so the
+    // researcher's text is escaped. When GRIDDY's question is blank it stays
+    // blank, so the question can be written in Qualtrics instead (the script
+    // keeps it); the title still names the question in the builder.
     const questionText =
       item.config.layout.questionText || item.title || `Grid question ${index + 1}`;
+    const questionHtml = escapeHtml(item.config.layout.questionText || "");
 
     questionElements.push({
       SurveyID: surveyId,
@@ -1947,7 +2015,7 @@ export function buildQualtricsQsf(
       SecondaryAttribute: questionText,
       TertiaryAttribute: null,
       Payload: {
-        QuestionText: questionText,
+        QuestionText: questionHtml,
         DefaultChoices: false,
         DataExportTag: `Q${index + 1}`,
         QuestionType: "DB",

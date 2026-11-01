@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildQualtricsSnippet } from "./qualtricsExport";
+import { buildQualtricsQsf, buildQualtricsSnippet } from "./qualtricsExport";
 import type { GridConfig } from "../grid-types";
 
 /**
@@ -76,7 +76,7 @@ interface Run {
   nativeNextHidden: boolean;
 }
 
-function run(config: GridConfig): Run {
+function run(config: GridConfig, saved: Record<string, string> = {}, questionHtml = ""): Run {
   const result: Run = {
     container: document.createElement("div"),
     embedded: {},
@@ -92,8 +92,10 @@ function run(config: GridConfig): Run {
       setEmbeddedData: (field: string, value: string) => {
         result.embedded[field] = value;
       },
+      getEmbeddedData: (field: string) => saved[field] ?? "",
     },
   };
+  result.container.innerHTML = questionHtml;
   document.body.appendChild(result.container);
   const question = {
     getQuestionTextContainer: () => result.container,
@@ -490,5 +492,78 @@ describe("image URLs", () => {
     const wrapper = r.container.querySelector("[data-griddy-scroller]")!
       .firstElementChild as HTMLElement;
     expect(wrapper.style.backgroundImage).toContain("o'brien.png");
+  });
+});
+
+describe("going back to the grid, or resuming later", () => {
+  it("shows the answers already recorded instead of an empty grid", () => {
+    const r = run(makeConfig(), { GridAssignments: '{"r1-c1":"Friends","r9-c9":"Friends","r1-c2":"Strangers"}' });
+    expect(cells(r.container)[0].textContent).toContain("Friends");
+    // Only real cells and real categories come back; nothing is lost on display.
+    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+  });
+
+  it("shows the same pre-fills and reactions rather than drawing new ones", () => {
+    const r = run(experimental({ prefillMode: "shuffle" }), {
+      GridPrefills: '{"r1-c3":"Friends"}',
+      GridResponses: '{"r1-c3":"Disagree"}',
+    });
+    expect(JSON.parse(r.embedded.GridPrefills)).toEqual({ "r1-c3": "Friends" });
+    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c3": "Disagree" });
+  });
+});
+
+describe("question wording", () => {
+  it("keeps the wording written in Qualtrics when GRIDDY's question is blank", () => {
+    const base = makeConfig();
+    const r = run({ ...base, layout: { ...base.layout, questionText: "" } }, {}, "<b>Where do your relatives live?</b>");
+    expect(r.container.innerHTML).toContain("<b>Where do your relatives live?</b>");
+  });
+
+  it("escapes the question in the .qsf and leaves it blank when GRIDDY's is blank", () => {
+    const base = makeConfig();
+    const qsf = (questionText: string) =>
+      JSON.parse(buildQualtricsQsf([{ title: "Study A", config: { ...base, layout: { ...base.layout, questionText } } }]))
+        .SurveyElements.find((e: { Element: string }) => e.Element === "SQ").Payload;
+    expect(qsf("Rate A < B & C").QuestionText).toBe("Rate A &lt; B &amp; C");
+    expect(qsf("").QuestionText).toBe("");
+    expect(qsf("").QuestionDescription).toBe("Study A");
+  });
+});
+
+describe("centre cell, background and readability", () => {
+  it("keeps the centre cell when a barrier was left on it", () => {
+    const base = makeConfig();
+    const grid = cells(
+      run({
+        ...base,
+        layout: { ...base.layout, barriersCsv: "Wall", barrierMeta: { Wall: { color: "#334155", imageUrl: "" } }, blockedCells: { "r2-c2": "Wall" } },
+      }).container,
+    );
+    expect(grid[4].textContent).toContain("Your House");
+  });
+
+  it("lets a background image show through empty cells", () => {
+    const base = makeConfig();
+    const grid = cells(run({ ...base, layout: { ...base.layout, backgroundImageUrl: "https://example.com/map.png" } }).container);
+    expect(grid[0].style.backgroundColor).toBe("rgba(251, 248, 241, 0.55)");
+  });
+
+  it("writes placed reactions in dark text", () => {
+    const r = run(experimental());
+    cells(r.container)[0].click();
+    const reaction = Array.from(cells(r.container)[0].querySelectorAll("div"))
+      .filter((d) => d.textContent === "Agree")
+      .pop()!;
+    expect(reaction.style.color).toBe("rgb(42, 36, 28)");
+  });
+
+  it("keeps keyboard focus on a dropdown after a choice", () => {
+    const r = run(withSurvey({ selectionMode: "dropdown" }));
+    const select = cells(r.container)[0].querySelector("select")!;
+    select.focus();
+    select.value = "Friends";
+    select.dispatchEvent(new Event("change"));
+    expect(document.activeElement).toBe(cells(r.container)[0].querySelector("select"));
   });
 });
