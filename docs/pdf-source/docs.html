@@ -40,6 +40,7 @@
   h2, h3 { break-after: avoid; }
   figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 4px; }
   figure.narrow img { max-width: 46%; }
+  figure.medium img { max-width: 76%; }
   figcaption { color: var(--muted); font-size: 9pt; margin-top: 5px; }
   .note { background: var(--tint); border-left: 3px solid var(--accent); padding: 8px 12px; margin: 10px 0; }
   .diagram { font-family: Consolas, Menlo, monospace; font-size: 9pt; white-space: pre; background: none; border: none; padding: 4px 0 0 8px; color: var(--ink); }
@@ -102,27 +103,27 @@
 
   <h2>The editor</h2>
   <p>Settings on the left, live preview on the right. Pick a category in the Placing row, then click cells to try the grid. These test fills are not saved: respondents start with an empty grid. A line at the top of the design preview says what a click does; in an experiment with fixed or shuffled pre-fills, clicks change the pre-fills every respondent sees. Both previews show the grid at full size, with Fit as an option. Name the survey at the top and click Save. If the survey was renamed, or saved in another tab, since it was opened or last saved, Save asks whether to replace the saved copy or save it as a new survey.</p>
-  <figure><img src="img/editor.png" alt="The GRIDDY editor"><figcaption>The editor at <code>/</code>: question &amp; grid settings (01), categories (02), and the live preview.</figcaption></figure>
+  <figure><img src="img/editor.png" alt="The GRIDDY editor"><figcaption>The editor at <code>/</code>: question &amp; grid settings (01), categories (02), and the live preview at full size, with test fills.</figcaption></figure>
 
   <h2>How respondents answer, and experiments</h2>
   <p>Section 03 picks the input method. Under <strong>Words shown to respondents</strong> it can also reword the texts GRIDDY adds around the grid, such as “Placing:”, the empty-cell reminder and Next, which are English by default. Section 04 turns on experimental mode, where the grid is pre-filled and respondents react to it.</p>
-  <figure><img src="img/respondent-options.png" alt="Sections 03 and 04 of the editor"></figure>
+  <figure class="medium"><img src="img/respondent-options.png" alt="Sections 03 and 04 of the editor"></figure>
 
   <h2>Respondent preview</h2>
   <p>Runs the real exported script, with the grid at full size. <strong>View</strong> switches between Desktop (the default), Phone (a 375 px screen, with the scroll hint and edge arrows) and Fit (zoomed out). Answers here aren't saved, and your Qualtrics theme may change the page around the grid.</p>
-  <figure class="narrow"><img src="img/respondent-preview.png" alt="The Respondent preview tab"><figcaption>The Respondent preview tab, before the View switch was added.</figcaption></figure>
+  <figure class="narrow"><img src="img/respondent-preview.png" alt="The Respondent preview tab"><figcaption>The Respondent preview tab in its Desktop view, at full size. Phone and Fit are the other views.</figcaption></figure>
 
   <h2>My Surveys</h2>
-  <figure><img src="img/my-surveys.png" alt="The My Surveys page"><figcaption><code>/history</code>: surveys saved in this browser, with JSON backup and restore. A Duplicate button, added in November 2026, now sits between Open and Delete.</figcaption></figure>
+  <figure><img src="img/my-surveys.png" alt="The My Surveys page"><figcaption><code>/history</code>: surveys saved in this browser, with Open, Duplicate and Delete, and JSON backup and restore.</figcaption></figure>
 
   <h2>Export to Qualtrics</h2>
   <p>Click <strong>Export to Qualtrics</strong>, then <strong>Download .qsf</strong>, and import that file in Qualtrics. The dialog lists the steps and the fields the answers are saved to, as Qualtrics records them: <code>__js_GridAssignments</code>, or <code>__js_GridPrefills</code> and <code>__js_GridResponses</code>. Each grid gets a page of its own; if you add questions, keep the grid as the last question on its page and put follow-up questions above it or on the next page.</p>
   <p>Exports from older versions of GRIDDY save to fields without <code>__js_</code>. They record nothing in Qualtrics' new survey-taking experience, the default for surveys created since June 2026: export and import them again.</p>
-  <figure><img src="img/export-dialog.png" alt="The export dialog"><figcaption>The export dialog in October 2026. It now lists the recorded names, such as <code>__js_GridAssignments</code>. A raw-JavaScript option is tucked away under “Advanced”.</figcaption></figure>
+  <figure><img src="img/export-dialog.png" alt="The export dialog"><figcaption>The export dialog, listing the recorded name <code>__js_GridAssignments</code>. A raw-JavaScript option is tucked away under “Advanced”.</figcaption></figure>
 
   <h2>Combining several grids into one survey</h2>
   <p>From My Surveys, click <strong>Make multi-question survey</strong>. Add saved grids, order them, name each data field, then download one <code>.qsf</code>.</p>
-  <figure><img src="img/combine-surveys.png" alt="The combine surveys page"><figcaption><code>/history/combine</code>: each grid becomes its own page in Qualtrics.</figcaption></figure>
+  <figure><img src="img/combine-surveys.png" alt="The combine surveys page"><figcaption><code>/history/combine</code>: each grid becomes its own page in Qualtrics, and each row shows the field it is saved in.</figcaption></figure>
 </section>
 
 <section class="section">
