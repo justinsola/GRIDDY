@@ -49,9 +49,10 @@ async function findSaveConflict(
  *
  * Saving replaces the stored survey with the editor's id. If the survey was
  * renamed since it was opened or last saved, or saved in another tab since,
- * nothing is saved: the promise resolves to the SaveConflict to ask about,
- * and the researcher's answer comes back as `choice`. "saveAsNew" stores the
- * survey under a new id and leaves the stored one as it is.
+ * nothing is saved: the promise resolves to the SaveConflict to ask about.
+ * Call again with the researcher's answer as `choice`: "replace", or
+ * "saveAsNew", which stores the survey under a new id and leaves the stored
+ * one as it is. `markSaved` gets the record the survey was stored as.
  *
  * `beforeMarkSaved` runs once the survey is stored and before the editor
  * counts as saved, so a page that shows saved surveys can reload them first.
