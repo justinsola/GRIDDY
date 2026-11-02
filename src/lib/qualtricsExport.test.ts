@@ -422,12 +422,16 @@ describe("buildQualtricsSnippet experimental respondent input methods", () => {
     expect(js).toContain("respToolbarLabel.textContent = texts.reacting");
     expect(js).toContain('"reacting": "Reacting:"');
     expect(js).toContain("experimentalResponses[cellKey] = activeResponseLabel");
-    // drag-drop: draggable reaction tray + clear chip
-    expect(js).toContain("Drag a reaction onto a cell, or select a reaction and then a cell:");
-    expect(js).toContain("createResponseChip");
+    // drag-drop: draggable reaction tray + clear chip, labelled from the texts
+    expect(js).toContain("respDragLabel.textContent = texts.dragReaction");
+    expect(js).toContain(
+      '"dragReaction": "Drag a reaction onto a cell, or select a reaction and then a cell:"',
+    );
+    expect(js).toContain("createResponseChip(texts.clearReactionChip, true)");
     expect(js).toContain("__CLEAR_RESP__");
-    // dropdown: per-cell select still available
-    expect(js).toContain("— react —");
+    // dropdown: per-cell select still available, its empty choice from the texts
+    expect(js).toContain("emptyOpt.textContent = texts.chooseReaction");
+    expect(js).toContain('"chooseReaction": "— react —"');
     // each path is gated on the runtime selectionMode
     expect(js).toContain(
       'isExperimental && responseLabels.length > 0 && selectionMode === "paint"',

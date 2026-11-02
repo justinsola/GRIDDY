@@ -1,6 +1,7 @@
-import React, { useId } from "react";
+import React, { useId, useRef } from "react";
 import { useEditor } from "../EditorContext";
 import {
+  cleanRespondentTexts,
   DEFAULT_RESPONDENT_TEXTS,
   hasOwnWording,
   missingPlaceholders,
@@ -14,17 +15,27 @@ import {
   type RespondentTexts,
 } from "../lib/respondentTexts";
 
-const GROUPS: ReadonlyArray<{ group: RespondentTextGroup; title: string; desc?: string }> = [
+/** The groups the editor lists texts in. A group's description can depend
+ * on the texts it lists. */
+const GROUPS: ReadonlyArray<{
+  group: RespondentTextGroup;
+  title: string;
+  desc?: (keys: RespondentTextKey[]) => string;
+}> = [
   { group: "screen", title: "ON SCREEN" },
   {
     group: "reminder",
     title: "REMINDER",
-    desc: "Shown when Next finds cells left to answer: how many, where they are, and what to do.",
+    desc: () => "Shown when Next finds cells left to answer: how many, where they are, and what to do.",
   },
   {
     group: "screenReader",
     title: "HEARD WITH A SCREEN READER",
-    desc: "Not shown on screen. The spoken reminder starts with the same “How many” sentence.",
+    // Only a grid with a reminder has a spoken one.
+    desc: (keys) =>
+      keys.some((key) => key.startsWith("spoken"))
+        ? "Not shown on screen. The spoken reminder starts with the same “How many” sentence."
+        : "Not shown on screen.",
   },
 ];
 
@@ -39,6 +50,8 @@ const TextField: React.FC<{
   onChange: (value: string) => void;
 }> = ({ textKey, value, onChange }) => {
   const id = useId();
+  // The box, input or textarea, that Reset gives focus to.
+  const fieldRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const info = RESPONDENT_TEXT_INFO[textKey];
   const english = DEFAULT_RESPONDENT_TEXTS[textKey];
   const own = hasOwnWording(value);
@@ -58,6 +71,7 @@ const TextField: React.FC<{
     "w-full rounded-lg border border-hairline bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:border-accent focus:outline-none";
   const field = {
     id,
+    ref: fieldRef,
     value,
     placeholder: english,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
@@ -74,7 +88,12 @@ const TextField: React.FC<{
         {own && (
           <button
             type="button"
-            onClick={() => onChange("")}
+            onClick={() => {
+              onChange("");
+              // The button goes away with the wording, so focus moves to
+              // the box instead of the page.
+              fieldRef.current?.focus();
+            }}
             aria-label={`Reset ${info.label} to English`}
             title="Use GRIDDY's English again"
             className="flex-shrink-0 text-[11px] font-bold text-accent hover:underline"
@@ -118,8 +137,9 @@ const TextField: React.FC<{
 
 /**
  * "Words shown to respondents": this grid's own wording for the texts GRIDDY
- * adds around it, listing only those the grid's answer mode, experiment and
- * empty-cell setting use. A box left empty keeps GRIDDY's English.
+ * adds around it, listing only those the grid's answer mode, labels,
+ * experiment and empty-cell setting use. A box left empty keeps GRIDDY's
+ * English.
  */
 export default function RespondentTextsEditor() {
   const {
@@ -132,12 +152,11 @@ export default function RespondentTextsEditor() {
   const hasCounts = keys.some((key) => key.endsWith("One"));
 
   const setText = (key: RespondentTextKey, value: string) => {
-    const next: RespondentTexts = { ...own };
-    if (hasOwnWording(value)) next[key] = value;
-    else delete next[key];
+    // Only texts with wording, in the editor's order, so clearing a text and
+    // typing it again leaves the survey as it was.
     dispatch({
       type: "updateSurvey",
-      patch: { respondentTexts: Object.keys(next).length > 0 ? next : undefined },
+      patch: { respondentTexts: cleanRespondentTexts({ ...own, [key]: value }) },
     });
   };
 
@@ -171,7 +190,7 @@ export default function RespondentTextsEditor() {
           return (
             <fieldset key={group}>
               <legend className="text-[10px] font-bold tracking-widest text-ink-faint">{title}</legend>
-              {desc && <p className="mt-0.5 text-[11.5px] leading-snug text-ink-muted">{desc}</p>}
+              {desc && <p className="mt-0.5 text-[11.5px] leading-snug text-ink-muted">{desc(groupKeys)}</p>}
               <div className="mt-2.5 flex flex-col gap-3">
                 {groupKeys.map((key) => (
                   <TextField

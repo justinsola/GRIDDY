@@ -117,6 +117,88 @@ it("keeps the researcher's wording, and Reset brings back GRIDDY's English", () 
   expect(hasUnsavedChanges(editor.state)).toBe(false);
 });
 
+it("keeps keyboard focus in the box when Reset goes away", () => {
+  render();
+  act(() => {
+    block().open = true;
+  });
+  type(box("Next"), "Siguiente");
+  const reset = resetButton(box("Next"))!;
+  reset.focus();
+  expect(document.activeElement).toBe(reset);
+  act(() => reset.click());
+  expect(resetButton(box("Next"))).toBeUndefined();
+  expect(document.activeElement).toBe(box("Next"));
+});
+
+it("leaves a survey unchanged when a text is cleared and typed again", () => {
+  render();
+  // A survey saved with its texts in another order than the editor's.
+  const config = {
+    ...editor.state.config,
+    survey: {
+      ...editor.state.config.survey,
+      respondentTexts: { emptyOther: "Quedan {n} celdas vacías.", next: "Siguiente" },
+    },
+  };
+  act(() => {
+    editor.dispatch({ type: "setConfig", config });
+    editor.dispatch({ type: "markSaved", record: { id: config.id, updated_at: "2026-11-01T12:00:00.000Z" } });
+  });
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
+
+  type(box("Next"), "");
+  expect(hasUnsavedChanges(editor.state)).toBe(true);
+  type(box("Next"), "Siguiente");
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
+
+  const count = box("{n} cells are still empty.");
+  type(count, "");
+  type(count, "Quedan {n} celdas vacías.");
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
+});
+
+it("lists only the scroll hint and the arrows for a grid respondents only look at", () => {
+  render();
+  act(() => editor.dispatch({ type: "updateSurvey", patch: { allowInteraction: false } }));
+  expect(englishShown()).toEqual([
+    DEFAULT_RESPONDENT_TEXTS.scrollHint,
+    DEFAULT_RESPONDENT_TEXTS.scrollLeft,
+    DEFAULT_RESPONDENT_TEXTS.scrollRight,
+  ]);
+  expect(block().textContent).not.toContain("REMINDER");
+
+  // Dropdowns are drawn as soon as interaction is on, even without labels.
+  act(() =>
+    editor.dispatch({
+      type: "updateSurvey",
+      patch: { allowInteraction: true, selectionMode: "dropdown", categoriesCsv: "" },
+    }),
+  );
+  expect(englishShown()).toEqual([
+    "Choose label",
+    DEFAULT_RESPONDENT_TEXTS.scrollHint,
+    "Label for row {row}, column {col}",
+    DEFAULT_RESPONDENT_TEXTS.scrollLeft,
+    DEFAULT_RESPONDENT_TEXTS.scrollRight,
+  ]);
+});
+
+it("mentions the spoken reminder only when the grid has one", () => {
+  render();
+  const screenReaderNote = () =>
+    Array.from(block().querySelectorAll("fieldset"))
+      .find((f) => f.querySelector("legend")!.textContent === "HEARD WITH A SCREEN READER")!
+      .querySelector("p")!.textContent;
+  expect(screenReaderNote()).toBe(
+    "Not shown on screen. The spoken reminder starts with the same “How many” sentence.",
+  );
+  act(() => editor.dispatch({ type: "updateSurvey", patch: { skipBehavior: "allow" } }));
+  expect(screenReaderNote()).toBe("Not shown on screen.");
+  act(() => editor.dispatch({ type: "updateSurvey", patch: { skipBehavior: "force", allowInteraction: false } }));
+  expect(screenReaderNote()).toBe("Not shown on screen.");
+});
+
 it("treats a box of only spaces as empty", () => {
   render();
   type(box("Next"), "   ");

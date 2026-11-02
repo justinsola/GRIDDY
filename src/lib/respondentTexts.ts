@@ -21,6 +21,14 @@ export interface RespondentTextSetup {
   /** Respondents react to a pre-filled grid. */
   experiment: boolean;
   skipBehavior: SkipBehavior;
+  /** Respondents can answer the grid: an experiment with reaction labels, or
+   * a grid with labels and interaction on. One they cannot answer only shows
+   * the scroll hint and the arrows, and its dropdowns if it draws them.
+   * Missing counts as true. */
+  answerable?: boolean;
+  /** The grid draws a dropdown in each cell, as one answered with dropdowns
+   * and interaction on does even without labels. Missing counts as true. */
+  dropdownsDrawn?: boolean;
 }
 
 /** Where respondents meet a text: on screen, in the reminder Next shows, or
@@ -38,7 +46,8 @@ export interface RespondentTextInfo {
   fills?: Partial<Record<Placeholder, string>>;
   /** The placeholders the text needs to say what it is for. */
   required?: Placeholder[];
-  /** Whether respondents meet the text in a grid set up this way. */
+  /** Whether respondents meet the text in a grid set up this way, when they
+   * can answer it; respondentTextKeysFor also handles one they cannot. */
   usedBy: (setup: RespondentTextSetup) => boolean;
 }
 
@@ -51,7 +60,9 @@ const OFF = { off: "how many of them are off-screen" };
 const EMPTY = { n: "the number of empty cells" };
 const UNREACTED = { n: "the number of pre-filled cells without a reaction" };
 const CELL = { row: "the row number", col: "the column number" };
-const PAST_ARROW = { n: "the number of empty cells past the arrow" };
+// In an experiment, the cells still to answer are pre-filled cells without
+// a reaction.
+const PAST_ARROW = { n: "the number of cells past the arrow still to answer" };
 
 const TEXTS = {
   // On screen
@@ -371,14 +382,14 @@ const TEXTS = {
   },
   scrollLeftEmptyOne: {
     english: "Scroll the grid left ({n} empty cell there)",
-    label: "Left arrow, 1 empty cell past it",
+    label: "Left arrow, 1 cell still to answer past it",
     group: "screenReader",
     fills: PAST_ARROW,
     usedBy: checks,
   },
   scrollLeftEmptyOther: {
     english: "Scroll the grid left ({n} empty cells there)",
-    label: "Left arrow, 2 or more empty cells past it",
+    label: "Left arrow, 2 or more cells still to answer past it",
     group: "screenReader",
     fills: PAST_ARROW,
     required: ["n"],
@@ -386,14 +397,14 @@ const TEXTS = {
   },
   scrollRightEmptyOne: {
     english: "Scroll the grid right ({n} empty cell there)",
-    label: "Right arrow, 1 empty cell past it",
+    label: "Right arrow, 1 cell still to answer past it",
     group: "screenReader",
     fills: PAST_ARROW,
     usedBy: checks,
   },
   scrollRightEmptyOther: {
     english: "Scroll the grid right ({n} empty cells there)",
-    label: "Right arrow, 2 or more empty cells past it",
+    label: "Right arrow, 2 or more cells still to answer past it",
     group: "screenReader",
     fills: PAST_ARROW,
     required: ["n"],
@@ -436,30 +447,55 @@ export function respondentTextsFor(own: RespondentTexts | undefined): Record<Res
 const isKnown = (key: string, table: object) => Object.prototype.hasOwnProperty.call(table, key);
 
 /** A saved grid's own wording with only what the export can use: known
- * texts with wording of their own. Returns `value` itself when nothing needs
- * dropping, and undefined when nothing is left. */
+ * texts with wording of their own, in the order the editor lists them, so
+ * the same wording is always stored the same way. Returns `value` itself
+ * when nothing needs dropping or moving, and undefined when nothing is
+ * left. */
 export function cleanRespondentTexts(value: unknown): RespondentTexts | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value as Record<string, unknown>);
-  const usable = entries.filter(([key, text]) => isKnown(key, TEXTS) && hasOwnWording(text));
+  const texts = value as Record<string, unknown>;
+  const usable = RESPONDENT_TEXT_KEYS.filter((key) => isKnown(key, texts) && hasOwnWording(texts[key]));
   if (usable.length === 0) return undefined;
-  if (usable.length === entries.length) return value as RespondentTexts;
-  return Object.fromEntries(usable) as RespondentTexts;
+  const keys = Object.keys(texts);
+  if (keys.length === usable.length && keys.every((key, i) => key === usable[i])) return value as RespondentTexts;
+  return Object.fromEntries(usable.map((key) => [key, texts[key]])) as RespondentTexts;
 }
 
 /** How a grid is answered, read the way the exported script reads it. */
 export function respondentTextSetup(config: GridConfig): RespondentTextSetup {
   const skip = config.survey.skipBehavior;
+  const experiment = !!config.experimental?.enabled;
+  // Whether a list of names has one, split the way the script splits it.
+  const hasNames = (csv?: string) => (csv ?? "").split(",").some((name) => name.trim() !== "");
   return {
     selectionMode: config.survey.selectionMode ?? "paint",
-    experiment: !!config.experimental?.enabled,
+    experiment,
     skipBehavior: skip === "allow" || skip === "force" ? skip : "remind",
+    answerable: experiment
+      ? hasNames(config.experimental?.responseLabelsCsv)
+      : !!config.survey.allowInteraction && hasNames(config.survey.categoriesCsv),
+    dropdownsDrawn: !experiment && !!config.survey.allowInteraction,
   };
 }
 
-/** The texts respondents can meet in a grid set up this way, in order. */
+/** What a grid respondents cannot answer still shows: the scroll hint and
+ * the arrows, and the dropdowns it draws. */
+const SCROLL_KEYS: readonly RespondentTextKey[] = ["scrollHint", "scrollLeft", "scrollRight"];
+const DROPDOWN_KEYS: readonly RespondentTextKey[] = ["chooseLabel", "dropdownName"];
+
+/** The texts respondents can meet in a grid set up this way, in order. A
+ * grid they cannot answer (no labels or interaction off, or an experiment
+ * without reaction labels) has no toolbar, tray, reminder or Next of its own
+ * and no cell a screen reader describes, so it only shows the scroll hint
+ * and the arrows, and its dropdowns if it draws them. */
 export function respondentTextKeysFor(setup: RespondentTextSetup): RespondentTextKey[] {
-  return RESPONDENT_TEXT_KEYS.filter((key) => TEXTS[key].usedBy(setup));
+  return RESPONDENT_TEXT_KEYS.filter(
+    (key) =>
+      TEXTS[key].usedBy(setup) &&
+      (setup.answerable !== false ||
+        SCROLL_KEYS.includes(key) ||
+        (setup.dropdownsDrawn !== false && DROPDOWN_KEYS.includes(key))),
+  );
 }
 
 /** The placeholders `text` needs but has lost, such as {n}. */

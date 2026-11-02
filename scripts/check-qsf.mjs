@@ -226,7 +226,7 @@ questions.forEach((q, index) => {
   else if (legacy.length > 0) fail(`${label}: made by an older GRIDDY, which saves ${legacy.join(", ")} with setEmbeddedData; Qualtrics' new survey-taking experience records nothing from it, so export the survey again`);
   else fail(`${label}: could not find the saveField call that saves the answers`);
   for (const field of live) usedFields.push({ q: n, field });
-  legacyFields.push(...legacy);
+  for (const field of legacy) legacyFields.push({ q: n, field });
 
   const layout = cfg.layout ?? {};
   const survey = cfg.survey ?? {};
@@ -261,18 +261,24 @@ questions.forEach((q, index) => {
 
 // -------------------------------------------- 6. fields saved versus declared
 const used = [...new Set(usedFields.map((u) => u.field))];
+const legacyNames = [...new Set(legacyFields.map((u) => u.field))];
 const undeclared = used.filter((f) => !declaredFields.includes(recorded(f)));
-if (undeclared.length === 0) pass(`every field the scripts save is declared under its __js_ name: ${used.map(recorded).join(", ") || "(none)"}`);
-else {
+if (undeclared.length > 0) {
   const plain = undeclared.filter((f) => declaredFields.includes(f));
   const hint = plain.length > 0 ? ` (it declares ${plain.join(", ")}, which only the older survey layouts record)` : "";
   fail(`the Survey Flow does not declare ${undeclared.map(recorded).join(", ")}, so those answers would be lost${hint}`);
+} else if (used.length > 0 || legacyNames.length === 0) {
+  // Scripts from an older GRIDDY save no __js_ field; they failed above.
+  pass(`every field the scripts save is declared under its __js_ name: ${used.map(recorded).join(", ") || "(none)"}`);
 }
-const unused = declaredFields.filter((f) => !used.includes(f) && !used.map(recorded).includes(f) && !legacyFields.includes(f));
+const unused = declaredFields.filter((f) => !used.includes(f) && !used.map(recorded).includes(f) && !legacyNames.includes(f));
 if (unused.length > 0) warn(`declared but never saved: ${unused.join(", ")}`);
+// Each field under the name Qualtrics records it as: the __js_ name, or for a
+// script from an older GRIDDY, the plain name it saves with setEmbeddedData.
 const fieldOwners = {};
-for (const { q, field } of usedFields) (fieldOwners[field] ??= new Set()).add(q);
-const shared = Object.entries(fieldOwners).filter(([, qs]) => qs.size > 1).map(([f]) => recorded(f));
+for (const { q, field } of usedFields) (fieldOwners[recorded(field)] ??= new Set()).add(q);
+for (const { q, field } of legacyFields) (fieldOwners[field] ??= new Set()).add(q);
+const shared = Object.entries(fieldOwners).filter(([, qs]) => qs.size > 1).map(([f]) => f);
 if (shared.length === 0) pass("no field is saved by more than one question");
 else fail(`fields saved by several questions (later grids overwrite earlier answers): ${shared.join(", ")}`);
 
