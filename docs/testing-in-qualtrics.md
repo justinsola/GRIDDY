@@ -3,8 +3,9 @@
 This is the manual test process for the whole path a researcher takes:
 build a design in the live app, export it, import it into Qualtrics, preview
 it there, and check that the answers come out right. Run it before a release,
-after any change to `src/lib/qualtricsExport.ts`, and whenever Qualtrics
-changes something on its side.
+after any change to `src/lib/qualtricsExport.ts` or
+`src/lib/respondentTexts.ts`, and whenever Qualtrics changes something on its
+side.
 
 The process is written so that a person or a Claude session driving a browser
 can run it. Each part lists the steps, what must be true afterwards, and what
@@ -17,7 +18,8 @@ to record. Findings go in the log at the bottom.
   session; the built-in browser pane is not signed in and cannot sign in.
 - Node 22 or newer, for the `.qsf` validator (`scripts/check-qsf.mjs`, no
   dependencies).
-- About twenty minutes.
+- About half an hour: Part D runs in both of Qualtrics' survey-taking
+  experiences.
 
 ## The standard test design
 
@@ -52,8 +54,10 @@ Variations to run when the relevant code changed are listed at the end.
    **Download .qsf** in the dialog. Close the dialog with its **Close**
    button.
 7. Switch the preview to **Respondent preview**, pick a category and click a
-   few cells. The grid in this tab is drawn by the real exported script, so
-   the layout and labels here are what Qualtrics will show.
+   few cells. The grid in this tab is drawn by the real exported script at
+   full size (**View: Desktop**), so the grid's layout and labels are what
+   Qualtrics will show; the Qualtrics theme around it can differ. Cells
+   filled in either preview are a test and are not saved.
 
 Afterwards: the file `E2E_test_<date>.qsf` is in Downloads, the preview
 shows a 3 × 4 grid with "Your House" in the middle of row 2 and five
@@ -65,15 +69,18 @@ Run the validator on the download and give it the design, so it compares the
 file with what was built:
 
 ```bash
-node scripts/check-qsf.mjs ~/Downloads/E2E_test_2026-11-01.qsf --questions 1 --rows 3 --cols 4 --categories "Family, Friends, Coworkers, Neighbors, Mom's friends" --mode paint --experimental no --fields GridAssignments --name "E2E test 2026-11-01"
+node scripts/check-qsf.mjs ~/Downloads/E2E_test_2026-11-01.qsf --questions 1 --rows 3 --cols 4 --categories "Family, Friends, Coworkers, Neighbors, Mom's friends" --mode paint --experimental no --fields __js_GridAssignments --name "E2E test 2026-11-01"
 ```
 
 It checks the parts of the file Qualtrics relies on (survey entry, the
 eleven structural elements, blocks, Survey Flow, the question type), that the
-attached JavaScript parses and starts with the MIT notice, that every
-embedded-data field the script writes is declared in the Survey Flow, and
-that the grid in the file is the grid that was designed. Exit code 0 means
-every check passed. For a multi-grid export (My Surveys → Make
+attached JavaScript parses and starts with the MIT notice, that the script
+saves its answers with `setJSEmbeddedData`, that every field it saves is
+declared in the Survey Flow under its `__js_` name, and that the grid in the
+file is the grid that was designed. `--fields` takes the declared names, as
+Qualtrics records them. Exit code 0 means every check passed (25 checks for
+the standard design). A `.qsf` from an older GRIDDY version fails with
+"export the survey again". For a multi-grid export (My Surveys → Make
 multi-question survey) pass `--questions N` and use `--q N` to point the
 design checks at one grid.
 
@@ -88,9 +95,16 @@ Afterwards: the survey builder opens with one block holding one question.
 The question text is the question text from the design, the question shows
 the **JS** marker that means JavaScript is attached, and **Survey flow**
 (left toolbar) starts with an **Embedded Data** element that declares
-`GridAssignments` before the block. If Qualtrics rejects the file, record the
-exact message in the findings log; the validator's output tells you whether
-the file was already wrong before Qualtrics saw it.
+`__js_GridAssignments` before the block. The imported survey uses Qualtrics'
+older layout; Part D step 8 switches it to the new survey-taking experience.
+If Qualtrics rejects the file, record the exact message in the findings log;
+the validator's output tells you whether the file was already wrong before
+Qualtrics saw it.
+
+GRIDDY gives each grid a page of its own. A researcher who adds questions
+should keep the grid as the last question on its page and put follow-up
+questions above it or on the next page: unless the grid allows empty cells,
+its own Next, under the grid, replaces Qualtrics' Next for the whole page.
 
 Compare the buttons you clicked with the steps in GRIDDY's export dialog, the
 notice on the multi-question page and the README. Qualtrics renames buttons
@@ -98,20 +112,28 @@ from time to time; when they differ, update all three.
 
 ## Part D: preview in Qualtrics
 
+Run steps 1 to 7 twice: first in the older layout the imported survey starts
+on, then in Qualtrics' new survey-taking experience (step 8). Each run
+records its own response for Part E.
+
 1. Click **Preview** at the top right of the builder and preview the survey.
 2. Check the desktop view first. The grid must look like the respondent
-   preview in GRIDDY: 3 × 4, "Your House" in the centre cell, five category
-   buttons, the design's fonts and colours.
+   preview in GRIDDY (**View: Desktop**): 3 × 4, "Your House" in the centre
+   cell, five category buttons, the design's fonts and colours.
 3. Pick **Family** and click two cells; pick **Mom's friends** and click one
    cell; click one of the painted cells again to clear it. Each click must
    change exactly that cell.
 4. Open the browser console (F12). Nothing from the grid script should be
-   logged as an error.
+   logged as an error. Nothing should say "deprecated, please use
+   setJSEmbeddedData" either: that message comes from a script made by an
+   older GRIDDY, which records nothing in the new survey-taking experience.
 5. Switch the preview to the mobile view. The grid must keep its designed
    size: cells, text and pictures the same as on desktop, never shrunk to
    fit. A hint ("Part of this grid is out of view. Scroll sideways to see all
    of it.") and an arrow at the right edge must appear. The arrow scrolls
-   the grid, and a left arrow appears once it has scrolled.
+   the grid, and a left arrow appears once it has scrolled. GRIDDY's
+   Respondent preview with **View: Phone** (a frame 375 px wide) must show
+   the same hint and arrows; compare the two.
 6. Press the grid's own **Next** button (the red one under the grid) with
    cells still empty. With the default setting (Remind), a reminder says how
    many cells are empty and how many of them are off-screen, the empty cells
@@ -120,6 +142,24 @@ from time to time; when they differ, update all three.
    view and moves the keyboard focus to it; **Continue anyway** moves on.
    Qualtrics' own Next button must not be on the page.
 7. Finish the survey.
+8. Switch to the new survey-taking experience and run steps 1 to 7 again.
+   In the builder, open **Look and feel**; Qualtrics offers the new
+   survey-taking experience with **Get started**. Click it, then **Apply**,
+   and preview again. The preview's address names an engine (in our runs
+   `jfe`, `jfe5` or `jfe6` for the older layout and `jfe7` or `jfe1` for the
+   new experience), but do not rely on the number: in the new experience the
+   survey page has a `#next-button` element inside `#navigation`, which the
+   older layouts do not have. The grid must look and work the same in both.
+9. **Words shown to respondents.** In GRIDDY, open **03 How respondents
+   answer → Words shown to respondents** and change a few texts, for example
+   **Before the label buttons** to `Colocando:`, **Next button** to
+   `Siguiente` and **How many: 2 or more** to `Quedan {n} celdas vacías.`
+   Respondent preview must show them straight away; press `Siguiente` there
+   with cells empty to see the reminder. Then put the new script into
+   Qualtrics (**Copy code** under **Advanced: view raw JavaScript** in the
+   export dialog, pasted over the question's JavaScript) and preview again.
+   The same words must appear, and every text left empty must still be
+   GRIDDY's English.
 
 Record anything that differs from the GRIDDY preview, however small.
 
@@ -127,19 +167,24 @@ Record anything that differs from the GRIDDY preview, however small.
 
 1. In the Qualtrics project, open **Data & Analysis**. Preview responses are
    recorded; the table can take a minute to show a new one, so reload it.
-   Add the `GridAssignments` column with **Column chooser → Embedded Data**.
-2. Read the `GridAssignments` value for the response. It must be a
-   JSON object whose keys are the painted cells in `r{row}-c{col}` form and
-   whose values are the category names exactly as typed, for example
+   Add the `__js_GridAssignments` column with **Column chooser → Embedded
+   Data**. The chooser lists only the fields the Survey Flow declares: the
+   plain `GridAssignments` that the script also saves in the older layout is
+   not recorded.
+2. Read the `__js_GridAssignments` value for each response, one from each
+   experience. It must be a JSON object whose keys are the painted cells in
+   `r{row}-c{col}` form and whose values are the category names exactly as
+   typed, for example
    `{"r1-c1":"Family","r1-c2":"Family","r3-c4":"Mom's friends"}`. A cell
    that was painted and then cleared must be absent.
 3. Export the data to CSV once and confirm the column survives the export
    unchanged.
 
-For the experimental mode the fields are `GridPrefills` (what the respondent
-was shown) and `GridResponses` (what they answered); check both. A grid that
-was shown but left untouched records `{}`, and pre-fills are recorded as soon
-as the grid is shown, whether or not the respondent reacts.
+For the experimental mode the fields are `__js_GridPrefills` (what the
+respondent was shown) and `__js_GridResponses` (what they answered); check
+both. A grid that was shown but left untouched records `{}`, and pre-fills
+are recorded as soon as the grid is shown, whether or not the respondent
+reacts.
 
 ## Variations
 
@@ -154,7 +199,8 @@ Run the one that matches what changed:
 - **Back button**: turn Back on in Qualtrics' **Survey options**, answer the
   grid, go to the next page, come back and go forward again. The grid's
   answers, its pre-fills (even when shuffled or weighted) and its reactions
-  must come back unchanged.
+  must come back unchanged, in both experiences (the new one reads them back
+  with `getJSEmbeddedData`).
 - **Keyboard and screen reader**: Tab to a cell and press Enter; in drag and
   drop, press Enter on a chip to pick it up, then Enter on a cell to place
   it, and Enter on a filled cell's × clears it. With a screen reader on
@@ -173,11 +219,15 @@ Run the one that matches what changed:
 - **A page without a grid after the grid**: add a plain question on the
   next page. Qualtrics' Next must be there.
 - **Field name ending**: in the export dialog, type an ending such as `Q2`.
-  The listed fields, the `.qsf`'s Survey Flow and the copied script must all
-  use `GridAssignments_Q2` (or `GridPrefills_Q2` and `GridResponses_Q2`).
+  The listed fields and the `.qsf`'s Survey Flow must use
+  `__js_GridAssignments_Q2` (or `__js_GridPrefills_Q2` and
+  `__js_GridResponses_Q2`), and the copied script must save
+  `GridAssignments_Q2`, which Qualtrics records with the `__js_`.
 - **Experiment**: turn on **04 Add an experiment**, pre-fill a few cells,
-  add response labels `Like, Dislike`; check `GridPrefills` and
-  `GridResponses`.
+  add response labels `Like, Dislike`; check `__js_GridPrefills` and
+  `__js_GridResponses`. In the design preview, clicks change the pre-fills
+  (the line above the grid says so), and **Clear pre-fills** asks before
+  removing them.
 - **Barriers**: add a barrier type and block two adjacent cells; they must
   be non-interactive in Qualtrics and drawn as one shape.
 - **Images**: give a category an uploaded image. The validator reports the
@@ -185,12 +235,21 @@ Run the one that matches what changed:
   script grows past a few hundred kilobytes.
 - **Multi-question survey**: save two designs, go to **My surveys → Make
   multi-question survey**, export one `.qsf`, and check that each grid is on
-  its own page with its own field.
+  its own page with its own `__js_` field, as the page lists it ("Saved in
+  Qualtrics as …").
+- **Another language**: reword every text under **Words shown to
+  respondents** (for example a full Spanish set). Check the reminder with 1
+  and with several empty cells, with some of them off-screen, with Require,
+  and with a screen reader. Also try Arabic or Hebrew texts: their
+  punctuation must sit at the correct end, because GRIDDY's text elements
+  have `dir="auto"`.
 - **Raw JavaScript**: in the export dialog open **Advanced: view raw
   JavaScript**, copy it, and paste it into a Text/Graphic question's
-  JavaScript in Qualtrics by hand; also declare the listed field
-  (`GridAssignments`, or the name with your field name ending) in the
-  Survey Flow yourself.
+  JavaScript in Qualtrics by hand; also declare the listed field in the
+  Survey Flow yourself, under its `__js_` name (`__js_GridAssignments`, or
+  `__js_GridAssignments_<ending>` with a field name ending). Try it in a
+  survey created in Qualtrics, which uses the new survey-taking experience:
+  there a Survey Flow that declares only `GridAssignments` records nothing.
 
 ## Running it with Claude
 
@@ -220,49 +279,60 @@ locally, and reports what differed. Learned on the first runs:
 - To test a branch before it is merged, run its dev server and export from
   there, or build the `.qsf` with a short script that calls
   `buildQualtricsQsf` (the branch's own code).
+- In the new survey-taking experience the page has no jQuery, and
+  `Qualtrics.SurveyEngine.setEmbeddedData` and `getEmbeddedData` only log
+  "deprecated, please use setJSEmbeddedData". To probe what a page records,
+  use `setJSEmbeddedData` with a field declared under its `__js_` name.
 - Qualtrics projects created by test runs are named `E2E test <date>` or
-  `E2E <variation> <date>`; delete them when the run is over.
+  `E2E <variation> <date>`. The account owner deletes them once a round of
+  runs is over.
 
 ## Open questions
 
-Behaviour the maintainer should decide. None of these touches recorded
-responses; the first can replace a saved survey design.
+Decided on 2 November 2026: the eight questions of 1 November, and one more
+about the previews.
 
-1. **Save always writes to the survey that was opened.** Renaming a survey
-   to make a variant and saving replaces the original, and two tabs editing
-   one survey overwrite each other. Option: when the name changed, or the
-   survey was saved elsewhere since it was opened, ask "Replace, or save as
-   a new survey?", and add Duplicate to My surveys.
-2. **Response labels offer Layer mode, which does nothing.** Reaction images
-   always lie over the cell. Option: remove the control for labels, or give
-   it the same meaning as for categories.
-3. **The design preview's clicks are only a test**, apart from Block cells
-   and painting an experiment's pre-fills. The tour now says so. Option: a
-   one-line note above the design grid as well.
-4. **An unused multi-step script** (`buildQualtricsMultiQuestionSnippet` in
-   `src/lib/qualtricsExport.ts`) is not called by the app and has none of
-   the fixes below. Option: delete it.
-5. **The grid's Next sits under the grid.** On a page where other questions
-   follow the grid, Qualtrics' Next at the bottom is hidden and the way on
-   is the grid's Next, above those questions. The `.qsf` gives each grid its
-   own page, and the manual-paste steps say to do the same. Option: move the
-   grid's Next into Qualtrics' button bar (it differs between Qualtrics
-   layouts, so each would need testing).
-6. **Text the grid shows respondents is in English** ("Placing:", "Clear
-   cell", the reminder, "Next"), and Qualtrics' translation tools cannot
-   reach it. Option: make these strings editable in the export, one set per
-   language.
-7. **Who owns the question wording.** When GRIDDY's question text is set,
-   wording edited or translated in the Qualtrics builder is not shown to
-   respondents. Option: show Qualtrics' wording whenever it is not empty.
-8. **Fonts load from Google Fonts**, which tells Google each respondent's IP
-   address. Some ethics boards ask about this. Option: use system fonts, or
-   host the two fonts with the survey.
+1. **Saving:** Save asks "Replace, or save as a new survey?" when the survey
+   was renamed since it was opened or saved, or saved in another tab or
+   window since. The multi-question page's "Save the editor's changes" asks
+   too. My surveys has Duplicate. Done.
+2. **Reaction labels:** Layer mode is removed for response labels and kept
+   for categories. The picture hint says what respondents see. Done.
+3. **Design preview clicks:** a line above the design preview says what a
+   click does in the current mode. In an experiment with Fixed or Shuffle
+   pre-fills, Clear Cells reads "Clear pre-fills" and asks first. Done.
+4. **The unused multi-step script** is deleted. Done.
+5. **The grid's Next stays under the grid.** Keep the grid as the last
+   question on its page and put follow-up questions above it or on the next
+   page. The `.qsf` already gives each grid its own page.
+6. **Words shown to respondents:** each grid can reword every text GRIDDY
+   shows respondents (section 03). For a survey in several languages, use
+   one grid per language, shown with display logic on `Q_Language`. Done.
+7. **Question wording:** GRIDDY's question text still wins when it has
+   visible characters; changing that was judged too risky. Text made only of
+   spaces now counts as empty, and a hint under the question box says how to
+   use the wording written in Qualtrics instead. Done.
+8. **Google Fonts:** kept. The maintainer is not concerned.
+9. **Previews** show the grid at 100% unless the researcher picks another
+   view: Fit, or Phone in the respondent preview. Done.
+
+Still open:
+
+- **Surveys translated with Qualtrics' Translate tool:** choosing a grid's
+  texts at run time from `Q_Language`. Today: one grid per language, shown
+  with display logic.
+- **Piped text that contains a quote:** question text and labels typed in
+  GRIDDY are embedded in the script as they are, and Qualtrics fills in
+  piped text such as `${e://Field/Name}` inside them. A piped value that
+  contains a double quote can break the script. This was already so before
+  November. GRIDDY's own respondent texts are escaped and never piped.
 
 ## Fixed in November 2026
 
-Found by these runs or by code review, fixed in PR 17. Re-run the matching
-check when the code around it changes.
+Found by these runs or by code review. Re-run the matching check when the
+code around it changes.
+
+Fixed in PR 17 (1 November):
 
 - **Phones:** the grid keeps its designed size and scrolls sideways inside
   its own frame, with a hint and edge arrows (Part D step 5).
@@ -307,6 +377,31 @@ check when the code around it changes.
   block-cells mode; Rows and Columns take only whole numbers from 1 to 10;
   label names saved with spaces at either end are repaired.
 
+Fixed on 2 November, with the decisions above:
+
+- **Recording in the new survey-taking experience:** the script saves with
+  `setJSEmbeddedData`, which both experiences record as `__js_` and the
+  field name, and also with `setEmbeddedData` where that still works. The
+  `.qsf`, the export dialog and the multi-question page use the `__js_`
+  names; Back and resume read them back. A save that fails no longer stops
+  the grid, its reminder or its Next (Part D step 8, Part E).
+- **Question text** made only of spaces counts as empty, so respondents see
+  the wording written in Qualtrics.
+- **Saving:** Save asks before replacing a renamed survey or one saved in
+  another tab or window since; My surveys has Duplicate; importing a backup
+  tells surveys apart by id, so a copy is no longer skipped as a duplicate.
+- **Previews:** both show the grid at full size, with Phone and Fit views;
+  the design preview says what a click does, and Clear pre-fills asks
+  first.
+- **Labels:** reactions no longer offer Layer mode, which did nothing, and
+  each chip editor's Layer mode radios form a group of their own.
+- **Words shown to respondents** can be reworded for each grid (Part D
+  step 9), and GRIDDY's own text elements have `dir="auto"`, so their
+  punctuation sits at the correct end in right-to-left surveys.
+- **Code:** the unused multi-step script is deleted, and `check-qsf.mjs`
+  checks the `__js_` names and flags `.qsf` files from older GRIDDY
+  versions.
+
 ## Findings log
 
 | Date | Parts run | Result | Notes |
@@ -322,3 +417,6 @@ check when the code around it changes.
 | 2026-11-01 | Weighted experiment in drag-and-drop mode, with a joined barrier, a background image and a category image in Front layer mode | Pass | `E2E fix weighted 2026-11-01` (SV_9AAyTfMVm7P2ocu); Qualtrics accepted a 250 KB question script with two embedded images. Weighted pre-fills filled all 13 open cells and were recorded on display; the two barrier cells drew as one shape; the background showed through. A simulated finger drag placed "Agree" and the keyboard (Enter on a chip, then on a cell) placed "Disagree"; screen-reader labels read "Row 1, column 1: Friends, reaction Agree"; the reminder counted the 11 cells still without a reaction. |
 | 2026-11-01 | Page check after the third review: in-page display logic, two grids on one page, a page without a grid, a copy of a grid saving to the same field, Back on | Pass, 1 defect found and fixed | `E2E page check 2026-11-01` (SV_aa8Ssj8Wm5rqafs), jfe6 preview. After import the display logic's **In Page** box was ticked but took effect only once the logic was saved in the builder. While the grid was hidden, Qualtrics' Next was on the page and nothing was recorded; Yes showed the grid, recorded `{}` and put the grid's Next in place of Qualtrics'; No gave Qualtrics' Next back. On the page with two grids only the lower grid had a Next; pressing it showed both grids' reminders, and Continue anyway on the Remind grid stayed on the page while the Require grid had empty cells. A mouse click on a drag-and-drop chip did nothing; Space picked it up, Enter on a cell placed it, and Space on the cell's × cleared it without placing the held label. The page without a grid had Qualtrics' Next and Back. The copy of grid A opened empty, and Back restored both earlier pages as answered. Defect: pressing the untouched copy's Next wrote its empty answer over grid A's, so `GridAssignments_A` was recorded as `{}`; fixed so that on Next a grid records only fields it owns. `GridAssignments_B` recorded all eight cells and `GridAssignments_C` `{}`. |
 | 2026-11-01 | Copy check after that fix | Pass | `E2E copy check 2026-11-01` (SV_ewVoTsKYCAbjlC6), jfe preview. The copy of grid A opened empty, and Continue anyway on it left `GridAssignments_A` as `{"r1-c1":"Family"}`. |
+| 2026-11-01 | New survey-taking experience check on `main` | Defect found, fixed on the 2 November branch | `E2E new experience 2026-11-01` (SV_51kMYX4GBU1wMLQ). `main`'s script recorded `GridAssignments` in the older layout (jfe preview). After **Look and feel → Get started → Apply** the grid looked and worked the same (reminder, Continue anyway), but the response recorded nothing: `setEmbeddedData` and `getEmbeddedData` are stubs there that log "deprecated, please use setJSEmbeddedData". Probe fields showed that `setJSEmbeddedData` with a declared `__js_` field records in both experiences. The page has `#next-button` inside `#navigation`, and no jQuery. |
+| 2026-11-02 | Fix branch in both experiences: three grids on three pages, Back on | Pass | `E2E fix new exp 2026-11-02` (SV_0lcDvB3bTweMQ50). Grid A plain; grid B with only spaces in GRIDDY's question text and "Qualtrics wording for grid B" typed in the builder; grid C 10 × 10 with long labels (a 3,621-character answer). Run in the older layout (jfe5) and again after switching to the new experience (jfe7). Both runs: the reminder and Continue anyway worked, Back restored grid A as it was left (read with `getJSEmbeddedData`), grid B showed the Qualtrics wording, and `__js_GridAssignments_A`, `_B` and `_C` recorded every answer, including all 100 cells of grid C. An empty block added by mistake in the builder was skipped. The Column chooser listed only the declared `__js_` fields (the plain names the script also writes in the older layout are not recorded). |
+| 2026-11-02 | Experiment in the new experience | Pass | `E2E fix new exp experiment 2026-11-02` (SV_bdQpj829TVAzp42), new experience (jfe1). The pre-fills were recorded when the grid appeared, and the reaction was recorded: `__js_GridPrefills` `{"r1-c1":"Family","r2-c3":"Friends"}`, `__js_GridResponses` `{"r1-c1":"Agree"}`. |

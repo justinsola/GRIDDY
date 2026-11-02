@@ -14,11 +14,12 @@ Developed by Michael Alfred Jenkins, Katun Jie Li, Suhas Puttoju, and Ishita Sai
 
 ## What GRIDDY Does
 
-- Build and preview custom grid questions.
+- Build and preview custom grid questions, at full size or as on a phone.
 - Configure survey categories, labels, colors, and interaction behavior.
-- Save surveys locally in the browser.
+- Reword the texts GRIDDY shows respondents, for surveys in other languages.
+- Save and duplicate surveys locally in the browser.
 - Export saved surveys as JSON backups.
-- Export a ready-to-import Qualtrics `.qsf` (single grid or a multi-grid bundle) — no manual question/field setup required.
+- Export a ready-to-import Qualtrics `.qsf` (single grid or a multi-grid bundle) — no manual question/field setup required. The grid records its answers in Qualtrics' new survey-taking experience and in the older layouts.
 
 ## Tech Stack
 
@@ -97,30 +98,83 @@ manual setup in Qualtrics.
    `.qsf`, one grid per page.)
 4. In Qualtrics, click **Create a new project → Survey → Get started**, choose
    **"Import a QSF file"**, select the downloaded `.qsf`, and click
-   **Create project**.
+   **Create project**. Each grid is on a page of its own. If you add
+   questions, keep the grid as the last question on its page and put
+   follow-up questions above it or on the next page: unless the grid allows
+   empty cells, its own Next, under the grid, replaces Qualtrics' Next for
+   the whole page.
 5. **Publish.** The grid renders and saves responses automatically into the
    pre-created embedded-data fields, visible under **Data & Analysis**:
-   `GridAssignments` for a single grid, or `GridPrefills` and `GridResponses`
-   in experimental mode. In a multi-question survey each grid gets its own
-   fields, named after its data field: `GridAssignments_<name>`, or
-   `GridPrefills_<name>` and `GridResponses_<name>`. The multi-question page
-   shows each grid's exact field names. A grid exported on its own can get
-   a **Field name ending** in the export dialog: `Q2` saves to
-   `GridAssignments_Q2`. If a field's column isn't shown in
-   **Data & Analysis**, add it with **Column chooser → Embedded Data**; data
-   downloads always include it.
+   `__js_GridAssignments` for a single grid, or `__js_GridPrefills` and
+   `__js_GridResponses` in experimental mode. Qualtrics puts `__js_` in front
+   of each field GRIDDY's script saves. In a multi-question survey each grid
+   gets its own fields, named after its data field:
+   `__js_GridAssignments_<name>`, or `__js_GridPrefills_<name>` and
+   `__js_GridResponses_<name>`. The multi-question page shows each grid's
+   exact field names. A grid exported on its own can get a **Field name
+   ending** in the export dialog: `Q2` saves to `__js_GridAssignments_Q2`.
+   If a field's column isn't shown in **Data & Analysis**, add it with
+   **Column chooser → Embedded Data**; data downloads always include it.
+
+### Qualtrics' new survey-taking experience
+
+Qualtrics' new survey-taking experience (formerly Simple Layout) is the
+default for surveys created in Qualtrics since 3 June 2026. The grid works the
+same in it and in the older layouts. A survey imported from GRIDDY's `.qsf`
+starts on the older layout. A grid pasted or copied into a survey created in
+Qualtrics since then, or a survey switched to the new experience under
+**Look and feel**, runs in the new experience.
+
+The answer columns were renamed in November 2026: they used to be
+`GridAssignments`, `GridPrefills` and `GridResponses`, and are now the
+`__js_` names above. Analysis code that looks for `GridAssignments` must use
+`__js_GridAssignments`. A survey exported from an older GRIDDY (its Survey
+Flow declares the names without `__js_`) still records in the older layouts,
+but records nothing in the new experience, although the grid looks and works
+normally. For such a survey, either:
+
+- export it from GRIDDY again and import the new `.qsf`, or paste the new
+  script into the grid question and declare the `__js_` fields in the Survey
+  Flow; or
+- switch the survey back to the older layout in **Survey options**.
 
 ### Manual fallback
 
 To paste into an existing survey instead, use **Copy code** in the export
 dialog: add an Embedded Data element with the listed field(s) to your Survey
-Flow, add a Text/Graphic question on its own page, and paste the script into
-its JavaScript editor. Unless the grid allows empty cells, it hides Qualtrics'
-Next button on its page and moves on with its own Next. Each grid in a survey
-needs its own fields: give each one its own **Field name ending** in the
-export dialog, or combine them on the multi-question page, which names each
-grid's fields. A grid question copied in Qualtrics, or repeated with Loop &
-Merge, would share its fields with the original.
+Flow, under their `__js_` names (for example `__js_GridAssignments`), add a
+Text/Graphic question on its own page, and paste the script into its
+JavaScript editor. A Survey Flow that declares only `GridAssignments` records
+nothing in the new survey-taking experience. Unless the grid allows empty
+cells, it hides Qualtrics' Next button on its page and moves on with its own
+Next. Each grid in a survey needs its own fields: give each one its own
+**Field name ending** in the export dialog, or combine them on the
+multi-question page, which names each grid's fields. A grid question copied in
+Qualtrics, or repeated with Loop & Merge, would share its fields with the
+original.
+
+### Words shown to respondents
+
+GRIDDY adds a few words of its own around the grid: the **Placing:** label,
+the drag instructions, the empty-cell reminder with **Show me** and
+**Continue anyway**, the grid's **Next**, the scroll hint, and what screen
+readers hear. They are English by default, and Qualtrics' Translate tool
+does not reach them. To reword them, open **03 How respondents answer →
+Words shown to respondents** in the editor. Each grid keeps its own wording;
+an empty box keeps GRIDDY's English, and Respondent preview shows the result.
+
+- Keep placeholders such as `{n}`; the editor warns when one is missing.
+  Counts have one text for 1 and one for 2 or more.
+- The spoken reminder names the buttons in its own words ("Use Show me … or
+  Continue anyway"). If you rename the buttons, reword it to match.
+- Text typed there is shown exactly as typed: Qualtrics piped text such as
+  `${e://Field/Name}` is not filled in there.
+- For a survey in several languages, add one grid per language and show each
+  with display logic on `Q_Language`.
+
+The question itself is the **Question text** typed in GRIDDY. Leave that box
+empty to show the wording written in Qualtrics instead, for example to format
+or translate it there.
 
 ## Deployment
 
