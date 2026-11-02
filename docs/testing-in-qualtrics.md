@@ -32,6 +32,8 @@ caught.
 | Survey name | `E2E test <date>` (for example `E2E test 2026-11-01`) |
 | Question text | `Who lives where? Fill in the grid:` (default) |
 | Rows × columns | 3 × 4 (non-square, so a rows/columns swap is visible) |
+| Cell size | 100 × 100 px (default), so the grid is 430 × 320 px, wider than a phone |
+| On a narrow screen, start at | The center (default) |
 | Centre cell | on, label `Your House` |
 | Categories | `Family, Friends, Coworkers, Neighbors, Mom's friends` (the fifth one is added by hand; the apostrophe checks escaping) |
 | Respondent input | Select & click (paint) |
@@ -61,7 +63,8 @@ Variations to run when the relevant code changed are listed at the end.
 
 Afterwards: the file `E2E_test_<date>.qsf` is in Downloads, the preview
 shows a 3 × 4 grid with "Your House" in the middle of row 2 and five
-category buttons, and nothing in the browser console mentions an error.
+category buttons, the line under **Cell size** reads "The grid is 430 × 320
+px.", and nothing in the browser console mentions an error.
 
 ## Part B: check the file before importing it
 
@@ -118,8 +121,9 @@ records its own response for Part E.
 
 1. Click **Preview** at the top right of the builder and preview the survey.
 2. Check the desktop view first. The grid must look like the respondent
-   preview in GRIDDY (**View: Desktop**): 3 × 4, "Your House" in the centre
-   cell, five category buttons, the design's fonts and colours.
+   preview in GRIDDY (**View: Desktop**): 3 × 4, 430 × 320 px with cells of
+   100 × 100 px, "Your House" in the centre cell, five category buttons, the
+   design's fonts and colours.
 3. Pick **Family** and click two cells; pick **Mom's friends** and click one
    cell; click one of the painted cells again to clear it. Each click must
    change exactly that cell.
@@ -129,11 +133,13 @@ records its own response for Part E.
    older GRIDDY, which records nothing in the new survey-taking experience.
 5. Switch the preview to the mobile view. The grid must keep its designed
    size: cells, text and pictures the same as on desktop, never shrunk to
-   fit. A hint ("Part of this grid is out of view. Scroll sideways to see all
-   of it.") and an arrow at the right edge must appear. The arrow scrolls
-   the grid, and a left arrow appears once it has scrolled. GRIDDY's
-   Respondent preview with **View: Phone** (a frame 375 px wide) must show
-   the same hint and arrows; compare the two.
+   fit. The 430 px grid is wider than the phone's question (about 339 px),
+   so it must start scrolled to its middle: "Your House" in view, part of
+   columns 1 and 4 at the edges, the hint ("Part of this grid is out of
+   view. Scroll sideways to see all of it.") above it and an arrow at each
+   edge. Each arrow scrolls the grid its way; at either end only the other
+   arrow is left. GRIDDY's Respondent preview with **View: Phone** (a frame
+   375 px wide) must show the same start, hint and arrows; compare the two.
 6. Press the grid's own **Next** button (the red one under the grid) with
    cells still empty. With the default setting (Remind), a reminder says how
    many cells are empty and how many of them are off-screen, the empty cells
@@ -160,6 +166,18 @@ records its own response for Part E.
    export dialog, pasted over the question's JavaScript) and preview again.
    The same words must appear, and every text left empty must still be
    GRIDDY's English.
+10. **Cell size.** In GRIDDY, set **Cell size** to Width 150 and Height 120.
+    The line under it must read "The grid is 630 × 380 px.", and both
+    previews must grow to that size. Put the new script into Qualtrics as in
+    step 9 and preview again: the desktop view's grid must be as large as
+    GRIDDY's at **View: Desktop**, with cells 150 px wide and 120 px high
+    (measure one with the browser's inspector). Set the cells back to 100 ×
+    100 afterwards.
+11. **Start at the left edge.** In GRIDDY, choose **On a narrow screen,
+    start at → The left edge**. Respondent preview with **View: Phone** must
+    start at column 1, with only the right arrow. Put the new script into
+    Qualtrics and check its mobile view the same way. Choose **The center**
+    again afterwards.
 
 Record anything that differs from the GRIDDY preview, however small.
 
@@ -230,6 +248,14 @@ Run the one that matches what changed:
   removing them.
 - **Barriers**: add a barrier type and block two adjacent cells; they must
   be non-interactive in Qualtrics and drawn as one shape.
+- **A survey saved before cell sizes** (before 2 November 2026): open one
+  in My surveys, or import an older backup and open it. The line under
+  **Cell size** must give the size it always had (550 × 550 px whatever its
+  rows and columns), **New** must not ask about unsaved changes, and its
+  export must draw the grid at that size in Qualtrics.
+- **Small cells**: set Cell size to 40 × 40 with 10 columns. The editor
+  notes that cells under 44 px are hard to tap; on a phone, try placing
+  labels with a finger.
 - **Images**: give a category an uploaded image. The validator reports the
   size of embedded images; note how Qualtrics behaves if the question
   script grows past a few hundred kilobytes.
@@ -401,6 +427,16 @@ Fixed on 2 November, with the decisions above:
 - **Code:** the unused multi-step script is deleted, and `check-qsf.mjs`
   checks the `__js_` names and flags `.qsf` files from older GRIDDY
   versions.
+
+Changed on 2 November, after those (branch `feat/cell-size`):
+
+- **Grid size:** each cell has a size in pixels (100 × 100 by default) and
+  the grid grows with its rows and columns, instead of every grid filling
+  550 × 550 px. A design has the same size on every device; surveys saved
+  earlier keep their exact size (Part D step 10, and the variation "A
+  survey saved before cell sizes").
+- **Where a wide grid starts:** in its middle, with both arrows, unless the
+  researcher chooses the left edge (Part D steps 5 and 11).
 
 ## Findings log
 

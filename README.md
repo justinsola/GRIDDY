@@ -15,6 +15,7 @@ Developed by Michael Alfred Jenkins, Katun Jie Li, Suhas Puttoju, and Ishita Sai
 ## What GRIDDY Does
 
 - Build and preview custom grid questions, at full size or as on a phone.
+- Set each cell's size in pixels: the grid grows with its rows and columns and has the same size on every screen.
 - Configure survey categories, labels, colors, and interaction behavior.
 - Reword the texts GRIDDY shows respondents, for surveys in other languages.
 - Save and duplicate surveys locally in the browser.
@@ -175,6 +176,24 @@ an empty box keeps GRIDDY's English, and Respondent preview shows the result.
 The question itself is the **Question text** typed in GRIDDY. Leave that box
 empty to show the wording written in Qualtrics instead, for example to format
 or translate it there.
+
+### Grid size and phones
+
+Set each cell's width and height under **01 Question & grid → Cell size**:
+whole pixels from 20 to 600, 100 × 100 for a new survey. The grid's size
+follows from its rows and columns (a 3 × 3 grid of 100 px cells is 320 × 320
+px), and the line under Cell size gives it. A design has that size on every
+device; GRIDDY never shrinks it to fit.
+
+Qualtrics gives a question about 340 px on a phone. A wider grid scrolls
+sideways inside its own frame there, with a hint and arrows at its edges,
+and starts scrolled to its middle. To start at column 1 instead, choose
+**The left edge** under **On a narrow screen, start at**. The editor notes a
+grid wider than a phone, and cells under 44 px, which are hard to tap.
+
+Surveys saved before November 2026 drew every grid at 550 × 550 px. They
+keep that size: their cells get the size they had, which Cell size shows
+rounded until you change it.
 
 ## Deployment
 
