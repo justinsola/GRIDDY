@@ -712,3 +712,18 @@ describe("the grid's size comes from its cells", () => {
     expect(hasUnsavedChanges(again)).toBe(false);
   });
 });
+
+// ─── Where a grid wider than the screen starts ────────────────────────────────
+
+describe("where a grid wider than the screen starts", () => {
+  it("leaves the choice out of surveys that never made it", () => {
+    expect("scrollStart" in editorReducer(makeState(), { type: "newSurvey" }).config.layout).toBe(false);
+    expect("scrollStart" in normalizeConfig(makeBaseConfig()).layout).toBe(false);
+  });
+
+  it("keeps the left edge when it was chosen", () => {
+    const config = makeBaseConfig();
+    config.layout.scrollStart = "left";
+    expect(normalizeConfig(config).layout.scrollStart).toBe("left");
+  });
+});

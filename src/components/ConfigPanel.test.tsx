@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { EditorProvider, useEditor } from "../EditorContext";
+import { EditorProvider, hasUnsavedChanges, useEditor } from "../EditorContext";
 import ConfigPanel from "./ConfigPanel";
 import PreviewPanel from "./PreviewPanel";
 
@@ -114,7 +114,7 @@ it("says under the question box where respondents' wording comes from", () => {
   expect(hint?.textContent).toContain("Leave it empty to use the wording written in Qualtrics instead");
 });
 
-// ─── Cell size ────────────────────────────────────────────────────────────────
+// ─── Cell size and where a wide grid starts ───────────────────────────────────
 
 const renderEditor = () =>
   act(() => root.render(<EditorProvider><EditorSpy /><ConfigPanel /><PreviewPanel /></EditorProvider>));
@@ -209,4 +209,30 @@ it("shows a migrated survey's cells rounded and keeps their size until they are 
   expect(editor.state.config.tuning.cellWidth).toBe(177);
   expect(editor.state.config.tuning.cellHeight).toBe(530 / 3);
   expect(sizeNotes()).toContain("The grid is 551 × 550 px.");
+});
+
+it("lets the researcher choose where a grid wider than the screen starts", () => {
+  renderEditor();
+  const caption = Array.from(host.querySelectorAll("span")).find(
+    (span) => span.textContent === "ON A NARROW SCREEN, START AT",
+  )!;
+  const choice = host.querySelector<HTMLElement>(`[aria-labelledby="${caption.id}"]`)!;
+  expect(choice.getAttribute("role")).toBe("radiogroup");
+  expect(document.getElementById(choice.getAttribute("aria-describedby")!)!.textContent).toBe(
+    "When the grid is wider than the screen, respondents see this part first.",
+  );
+  const [center, left] = Array.from(choice.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+  expect([center.parentElement!.textContent, left.parentElement!.textContent]).toEqual(["The center", "The left edge"]);
+  expect(center.checked).toBe(true);
+
+  act(() => left.click());
+  expect(editor.state.config.layout.scrollStart).toBe("left");
+  expect(left.checked).toBe(true);
+  expect(hasUnsavedChanges(editor.state)).toBe(true);
+
+  // The center is the default: choosing it again leaves nothing to save.
+  act(() => center.click());
+  expect(center.checked).toBe(true);
+  expect(editor.state.config.layout.scrollStart).toBeUndefined();
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
 });

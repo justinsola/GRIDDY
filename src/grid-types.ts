@@ -2,6 +2,10 @@ import type { RespondentTexts } from "./lib/respondentTexts";
 
 export type SkipBehavior = "remind" | "allow" | "force";
 
+/** Where a grid wider than the respondent's screen starts: scrolled to its
+ * middle, or at its left edge. */
+export type ScrollStart = "center" | "left";
+
 export interface LayoutConfig {
   questionText: string;
   rows: number;
@@ -21,6 +25,12 @@ export interface LayoutConfig {
   barrierMeta: Record<string, CategoryMeta>;
   /** exportKey "r{row}-c{col}" -> barrier type name. Mirrors experimental.fixedAssignments. */
   blockedCells: Record<string, string>;
+  /**
+   * Where a grid wider than the respondent's screen starts. Missing (as in
+   * surveys saved before November 2026) or "center": scrolled to its
+   * middle. "left": at its left edge.
+   */
+  scrollStart?: ScrollStart;
 }
 
 export interface TuningConfig {

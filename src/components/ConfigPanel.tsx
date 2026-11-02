@@ -13,7 +13,7 @@ import {
   parseGridSize,
 } from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
-import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
+import { CategoryMeta, ExperimentalConfig, ScrollStart, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
 import ImageInput from "./ImageInput";
 import RespondentTextsEditor from "./RespondentTextsEditor";
@@ -57,6 +57,11 @@ const PREFILL_MODES = [
     desc: "Your painted assignments are shuffled per respondent.",
   },
 ] as const;
+
+const SCROLL_STARTS: ReadonlyArray<{ value: ScrollStart; label: string }> = [
+  { value: "center", label: "The center" },
+  { value: "left", label: "The left edge" },
+];
 
 const SKIP_BEHAVIORS: ReadonlyArray<{
   value: SkipBehavior;
@@ -253,9 +258,13 @@ const QuestionGridForm: React.FC = () => {
   const questionHintId = useId();
   const cellSizeCaptionId = useId();
   const gridSizeNotesId = useId();
+  const scrollStartCaptionId = useId();
+  const scrollStartHintId = useId();
+  const scrollStartGroup = useId();
 
   // The grid's size follows from its cells, rows and columns.
   const gridSize = gridPixelSize(config);
+  const scrollStart: ScrollStart = layout.scrollStart === "left" ? "left" : "center";
 
   const [rowsInput, setRowsInput] = useState(String(layout.rows));
   const [colsInput, setColsInput] = useState(String(layout.cols));
@@ -453,6 +462,35 @@ const QuestionGridForm: React.FC = () => {
             <p className="text-amber-700">Cells smaller than {MIN_TAP_SIZE} px are hard to tap on a phone.</p>
           )}
         </div>
+      </div>
+
+      <div>
+        <span id={scrollStartCaptionId} className="text-[10px] font-bold tracking-widest text-ink-faint">
+          ON A NARROW SCREEN, START AT
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby={scrollStartCaptionId}
+          aria-describedby={scrollStartHintId}
+          className="mt-1 flex flex-wrap gap-x-4 gap-y-1"
+        >
+          {SCROLL_STARTS.map((s) => (
+            <label key={s.value} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-ink">
+              <input
+                type="radio"
+                name={scrollStartGroup}
+                checked={scrollStart === s.value}
+                // The center is the default, which a survey stores as no choice.
+                onChange={() => update({ scrollStart: s.value === "left" ? "left" : undefined })}
+                className="h-3.5 w-3.5"
+              />
+              {s.label}
+            </label>
+          ))}
+        </div>
+        <p id={scrollStartHintId} className="mt-1 text-xs text-ink-muted">
+          When the grid is wider than the screen, respondents see this part first.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm text-ink">

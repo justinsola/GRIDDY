@@ -1987,6 +1987,22 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		setEdgeBadge(rightEdge, hidden.right);
 	}
 
+	// A grid wider than the screen starts scrolled to its middle, unless the
+	// researcher chose its left edge. This happens once: the first time the
+	// grid is on screen and wider than its frame, so a grid that display logic
+	// hides at first starts there when it appears. After that, resizing, the
+	// respondent's own scrolling, the reminder and Show me never move it back.
+	var startAtLeft = cfg.layout.scrollStart === "left";
+	var startPlaced = false;
+	function placeStart() {
+		if (startPlaced || !isDisplayed()) return;
+		var room = scroller.scrollWidth - scroller.clientWidth;
+		// Not laid out yet, or nothing to scroll: wait for the next change.
+		if (!(scroller.clientWidth > 0) || room <= 1) return;
+		startPlaced = true;
+		if (!startAtLeft) scroller.scrollLeft = Math.round(room / 2);
+	}
+
 	var controls = document.createElement("div");
 	controls.style.marginTop = "10px";
 	controls.style.display = "flex";
@@ -2303,6 +2319,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	// Resizing, and display logic showing or hiding the grid, can change
 	// what is on screen.
 	function onLayoutChange() {
+		placeStart();
 		updateIndicators();
 		syncPage();
 	}
@@ -2312,8 +2329,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		layoutObserver.observe(scroller);
 		layoutObserver.observe(container);
 	}
-	updateIndicators();
-	syncPage();
+	onLayoutChange();
 	setTimeout(onLayoutChange, 400);
 });
 

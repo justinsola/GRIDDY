@@ -247,11 +247,11 @@ function reminder(container: HTMLElement): HTMLElement {
 
 /** A grid sized by its cells: 4 columns of 100 px, 10 px apart, make it
  * 430 px wide, more than a phone's 339 px. */
-function wideGrid(): GridConfig {
+function wideGrid(scrollStart?: "center" | "left"): GridConfig {
   const base = makeConfig();
   return {
     ...base,
-    layout: { ...base.layout, cols: 4 },
+    layout: { ...base.layout, cols: 4, ...(scrollStart ? { scrollStart } : {}) },
     tuning: { gridGap: 10, gridPadding: 0, labelFontSizeRem: 1, cellWidth: 100, cellHeight: 100, sizing: "cells" },
   };
 }
@@ -285,6 +285,121 @@ describe("the grid keeps its designed size", () => {
     expect(grid.style.gridTemplateRows).toBe("repeat(3, minmax(0, 1fr))");
     expect(grid.style.gap).toBe("10px");
     expect(grid.style.padding).toBe("0px");
+  });
+});
+
+describe("where a grid wider than the screen starts", () => {
+  type Callback = () => void;
+  let observers: Callback[] = [];
+  class FakeResizeObserver {
+    constructor(callback: Callback) {
+      observers.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+  }
+  beforeEach(() => {
+    observers = [];
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver;
+  });
+  afterEach(() => {
+    delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+  const layoutChanged = () => observers.forEach((callback) => callback());
+
+  /** Lays the grid out in a frame `clientWidth` px wide, as a browser would:
+   * the 430 px grid and its 1 px borders are 432 px to scroll through. */
+  function laidOut(container: HTMLElement, clientWidth: number): HTMLElement {
+    const scroller = container.querySelector<HTMLElement>("[data-griddy-scroller]")!;
+    const gridWidth = parseFloat(gridFrame(container).style.width) + 2;
+    Object.defineProperty(scroller, "scrollWidth", { configurable: true, value: Math.max(gridWidth, clientWidth) });
+    Object.defineProperty(scroller, "clientWidth", { configurable: true, value: clientWidth });
+    return scroller;
+  }
+  const arrows = (container: HTMLElement) =>
+    (["left", "right"] as const).map(
+      (side) => container.querySelector<HTMLElement>(`[data-griddy-edge="${side}"]`)!.style.display,
+    );
+
+  it("starts scrolled to the middle, with the hint and both arrows", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 339);
+    layoutChanged();
+    // 432 px of grid in a 339 px frame leaves 93 px to scroll; half is 47.
+    expect(scroller.scrollLeft).toBe(47);
+    expect(arrows(r.container)).toEqual(["flex", "flex"]);
+    expect(r.container.querySelector<HTMLElement>("[data-griddy-scroll-hint]")!.style.display).toBe("block");
+  });
+
+  it("starts at the left edge when the researcher chose it", () => {
+    const r = run(wideGrid("left"));
+    const scroller = laidOut(r.container, 339);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+  });
+
+  it("centres the grid only once, and leaves it where the respondent puts it", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 339);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(47);
+
+    // The respondent scrolls to the left edge.
+    scroller.scrollLeft = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+    // The phone turns, the window is resized, the reminder appears.
+    laidOut(r.container, 300);
+    layoutChanged();
+    window.dispatchEvent(new Event("resize"));
+    button(r.container, "Next").click();
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+  });
+
+  it("leaves a grid that fits as it is", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 600);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "none"]);
+  });
+
+  it("centres the grid the first time it is wider than its frame", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 600);
+    layoutChanged();
+    // A window made narrower, or a phone turned upright.
+    laidOut(r.container, 339);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(47);
+  });
+
+  it("waits for the frame to be laid out", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 0);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    laidOut(r.container, 339);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(47);
+  });
+
+  it("centres a grid that display logic hides at first when it appears", () => {
+    const block = document.createElement("div");
+    block.style.display = "none";
+    document.body.appendChild(block);
+    const r = run(wideGrid(), {}, "", { parent: block });
+    const scroller = laidOut(r.container, 339);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+
+    block.style.display = "block";
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(47);
+    expect(arrows(r.container)).toEqual(["flex", "flex"]);
   });
 });
 

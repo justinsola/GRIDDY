@@ -600,7 +600,7 @@ describe("blocked cells in the exported grid", () => {
   });
 });
 
-// ─── The grid's size ──────────────────────────────────────────────────────────
+// ─── The grid's size and where a wide grid starts ─────────────────────────────
 
 describe("the grid's size in the export", () => {
   // 60 × 50 px cells, 4 px apart and 8 px from the border.
@@ -639,6 +639,12 @@ describe("the grid's size in the export", () => {
     const js = buildQualtricsSnippet(makeConfig());
     expect(js).toContain('"cellWidth": 112');
     expect(js).not.toContain('"previewWidth"');
+  });
+
+  it("carries where a grid wider than the screen starts", () => {
+    expect(buildQualtricsSnippet(sizedByCells())).not.toContain('"scrollStart"');
+    expect(buildQualtricsSnippet(sizedByCells({ scrollStart: "left" }))).toContain('"scrollStart": "left"');
+    expect(() => parse(buildQualtricsSnippet(sizedByCells()), { ecmaVersion: 2017 })).not.toThrow();
   });
 });
 
