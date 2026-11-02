@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PreviewViewChoice, { type PreviewViewOption } from "./PreviewViewChoice";
 import RespondentPreview from "./RespondentPreview";
 import { useEditor } from "../EditorContext";
 import { LayerMode, WeightEntry } from "../grid-types";
+import {
+  DESIGN_VIEWS,
+  DESIGN_VIEW_STORAGE_KEY,
+  type DesignView,
+  useClientWidth,
+  usePreviewView,
+} from "../lib/previewView";
 import {
   buildQualtricsSnippet,
   buildQualtricsQsfForConfig,
@@ -88,6 +96,11 @@ function renderAssignedContent(
     </>
   );
 }
+
+const DESIGN_VIEW_OPTIONS: readonly PreviewViewOption<DesignView>[] = [
+  { value: "full", label: "100%", title: "The grid at its designed size" },
+  { value: "fit", label: "Fit", title: "The grid scaled to fit this panel" },
+];
 
 // --- Experimental utility functions ---
 
@@ -176,6 +189,11 @@ export const PreviewPanel: React.FC = () => {
   // Experimental mode state
   const [previewTab, setPreviewTab] = useState<"design" | "respondent">("design");
   const [weightedPreview, setWeightedPreview] = useState<Record<string, string>>({});
+
+  // The design grid is drawn at its designed size unless the researcher
+  // picks Fit; the area around it scrolls when the panel is narrower.
+  const [designView, setDesignView] = usePreviewView(DESIGN_VIEW_STORAGE_KEY, DESIGN_VIEWS);
+  const [designStageRef, designStageWidth] = useClientWidth<HTMLDivElement>();
 
   useEffect(() => {
     if (!categories.length) {
@@ -385,6 +403,19 @@ export const PreviewPanel: React.FC = () => {
     );
   };
 
+  // In an experiment with fixed or shuffled pre-fills, clicks in the design
+  // grid change the survey's pre-fills; otherwise they only try the grid.
+  const editsPrefills = expEnabled && experimental.prefillMode !== "weighted";
+  // The pre-fills respondents get: those on open cells inside the grid.
+  const prefillCount = editsPrefills
+    ? cells.filter(
+        (cell) =>
+          !cell.isCenter &&
+          !layout.blockedCells[cell.exportKey] &&
+          experimental.fixedAssignments[cell.exportKey],
+      ).length
+    : 0;
+
   // Empty every cell in the currently editable layer of the preview.
   const handleClearCells = () => {
     if (!expEnabled) {
@@ -393,9 +424,20 @@ export const PreviewPanel: React.FC = () => {
     }
     if (experimental.prefillMode === "weighted") {
       setWeightedPreview({});
-    } else {
-      dispatch({ type: "updateExperimental", patch: { fixedAssignments: {} } });
+      return;
     }
+    // Pre-fills are part of the survey, and there is no undo.
+    if (
+      prefillCount > 0 &&
+      !window.confirm(
+        prefillCount === 1
+          ? "Remove 1 pre-fill from this survey?"
+          : `Remove all ${prefillCount} pre-fills from this survey?`,
+      )
+    ) {
+      return;
+    }
+    dispatch({ type: "updateExperimental", patch: { fixedAssignments: {} } });
   };
 
   const fieldNames = useMemo(() => singleGridFieldNames(config), [config]);
@@ -451,6 +493,24 @@ export const PreviewPanel: React.FC = () => {
   const showDropdownHint = !expEnabled && survey.allowInteraction && categories.length > 0 && survey.selectionMode === "dropdown";
   const showBlockTool = barriers.length > 0;
 
+  // What a click in the design grid does right now.
+  const designNote = blockEditMode
+    ? "Blocking changes the survey. Respondents cannot use blocked cells."
+    : !expEnabled
+      ? "Cells you fill here are a test. Respondents start with an empty grid."
+      : editsPrefills
+        ? "Clicks here change the pre-fills every respondent sees. Try answering in Respondent preview."
+        : "Sample preview — each respondent gets an independent draw.";
+
+  // 100% draws the grid at its designed size, as respondents see it. Fit
+  // stretches or shrinks the cells to the panel's width; text keeps its size.
+  const designGridSize: React.CSSProperties =
+    designView === "full"
+      ? { width: tuning.previewWidth, height: tuning.previewHeight, boxSizing: "content-box" }
+      : { width: "100%", aspectRatio: `${tuning.previewWidth} / ${tuning.previewHeight}` };
+  // At 100%, the grid and its 1 px borders are wider than the panel.
+  const designTooNarrow = designStageWidth > 0 && designStageWidth < tuning.previewWidth + 2;
+
   return (
     <>
       <section
@@ -484,16 +544,12 @@ export const PreviewPanel: React.FC = () => {
         </div>
 
         {previewTab === "respondent" ? (
-          <RespondentPreview snippet={qualtricsSnippet} />
+          <RespondentPreview snippet={qualtricsSnippet} gridWidth={tuning.previewWidth} />
         ) : (
           <>
-        {/* Weighted-mode hint (no button here — Regenerate lives in the bottom bar) */}
-        {expEnabled &&
-            experimental.prefillMode === "weighted" && (
-            <p className="text-xs text-ink-muted">
-              Sample preview — each respondent gets an independent draw.
-            </p>
-          )}
+        {/* What a click in the design grid does right now (in weighted mode,
+            Regenerate lives in the bottom bar) */}
+        <p className="text-xs text-ink-muted">{designNote}</p>
 
         {/* Paint toolbar */}
         {showPaintToolbar && (
@@ -647,21 +703,37 @@ export const PreviewPanel: React.FC = () => {
             <button
               type="button"
               onClick={handleClearCells}
-              title="Empty all cells"
+              title={editsPrefills ? "Remove every pre-fill from this survey" : "Empty all cells"}
               className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800"
             >
-              Clear Cells
+              {editsPrefills ? "Clear pre-fills" : "Clear Cells"}
             </button>
           </div>
         )}
 
+        <PreviewViewChoice
+          label="Design preview size"
+          options={DESIGN_VIEW_OPTIONS}
+          value={designView}
+          onChange={setDesignView}
+        />
+        {designView === "fit" ? (
+          <p className="text-xs text-ink-muted">
+            Scaled to fit this panel. Respondents see the grid at {tuning.previewWidth} × {tuning.previewHeight} px.
+          </p>
+        ) : (
+          designTooNarrow && (
+            <p className="text-xs text-ink-muted">Wider than this panel. Scroll sideways, or choose Fit.</p>
+          )
+        )}
+
         <p className="font-serif text-[17px] text-ink">{layout.questionText}</p>
 
+        <div ref={designStageRef} className={designView === "full" ? "overflow-auto" : undefined}>
         <div
-          className="relative min-h-0 w-full flex-1 overflow-hidden rounded-lg border border-hairline-warm bg-paper-window"
+          className="relative overflow-hidden rounded-lg border border-hairline-warm bg-paper-window"
           style={{
-            width: "100%",
-            aspectRatio: `${tuning.previewWidth} / ${tuning.previewHeight}`,
+            ...designGridSize,
             backgroundImage: layout.backgroundImageUrl
               ? `url('${layout.backgroundImageUrl}')`
               : undefined,
@@ -972,6 +1044,7 @@ export const PreviewPanel: React.FC = () => {
               );
             })}
           </div>
+        </div>
         </div>
 
         {/* Legend chips */}
