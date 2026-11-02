@@ -97,8 +97,9 @@ function App() {
             <ConfigPanel />
           </div>
 
-          {/* Sticky preview */}
-          <div data-tour="preview" className="w-[498px] flex-shrink-0">
+          {/* Sticky preview. From 1280 px windows up it is wide enough to show
+              the default 550 px grid at full size in both previews. */}
+          <div data-tour="preview" className="w-[498px] flex-shrink-0 xl:w-[616px]">
             <PreviewPanel />
           </div>
         </main>

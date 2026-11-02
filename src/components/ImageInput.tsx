@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import {
   fileToDataUri,
   dataUriByteSize,
@@ -16,6 +16,8 @@ interface Props {
   hint?: string;
   /** Longest side, in pixels, an uploaded image is reduced to. Defaults to 512. */
   maxDim?: number;
+  /** Accessible name of the URL field, telling apart several on one screen. */
+  label?: string;
 }
 
 const DEFAULT_WARN_BYTES = 500 * 1024;
@@ -32,10 +34,14 @@ export const ImageInput: React.FC<Props> = ({
   warnBytes = DEFAULT_WARN_BYTES,
   maxDim,
   hint,
+  label = "Image URL",
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The hint is about the picture, whether it is uploaded or linked.
+  const hintId = useId();
+  const describedBy = hint ? hintId : undefined;
 
   const isDataUri = value.startsWith("data:");
   const embeddedBytes = isDataUri ? dataUriByteSize(value) : 0;
@@ -84,6 +90,7 @@ export const ImageInput: React.FC<Props> = ({
               type="button"
               disabled={busy}
               onClick={() => fileInputRef.current?.click()}
+              aria-describedby={describedBy}
               className="rounded-lg border border-hairline bg-white px-3 py-1.5 text-xs font-bold text-ink transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
             >
               {busy ? "Processing…" : value ? "Replace image" : "Upload image"}
@@ -108,12 +115,14 @@ export const ImageInput: React.FC<Props> = ({
             onChange={(e) => onChange(e.target.value)}
             placeholder={isDataUri ? "Uploaded image embedded" : placeholder}
             disabled={isDataUri}
+            aria-label={label}
+            aria-describedby={describedBy}
             className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:bg-paper-window disabled:text-ink-faint"
           />
         </div>
       </div>
 
-      {hint && <p className="text-xs text-ink-faint">{hint}</p>}
+      {hint && <p id={hintId} className="text-xs text-ink-faint">{hint}</p>}
 
       {error && <p className="text-xs font-semibold text-accent">{error}</p>}
 

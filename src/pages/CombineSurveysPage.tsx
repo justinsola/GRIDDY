@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
-import { MISSING_TITLE_MESSAGE, saveEditorSurvey } from "../lib/saveEditorSurvey";
+import {
+  MISSING_TITLE_MESSAGE,
+  SaveChoice,
+  SaveConflict,
+  saveEditorSurvey,
+} from "../lib/saveEditorSurvey";
 import { findFieldCollision } from "../lib/combineFields";
 import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
+  recordedFieldName,
   sanitizeEmbeddedDataField,
   QualtricsQsfItem,
 } from "../lib/qualtricsExport";
@@ -56,12 +63,27 @@ function defaultFieldLabel(survey: ExportedSurvey): string {
   return /[A-Za-z0-9]/.test(ending) ? ending : survey.name ?? "";
 }
 
-/** The embedded-data field name(s) a question's answers are saved under. */
+/** The embedded-data field name(s) a question's answers are saved under, as
+ * Qualtrics records them ("__js_" and the name the item's script saves). */
 function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
-  const item = buildQsfItem(survey, fieldLabel);
-  return [item.embeddedDataField, item.prefillsField, item.responsesField]
-    .filter(Boolean)
+  return qsfEmbeddedFields(buildQsfItem(survey, fieldLabel))
+    .map(recordedFieldName)
     .join(" and ");
+}
+
+/** Lets a long field name wrap after its underscores instead of mid-word,
+ * but never inside the leading "__js_". */
+function breakAtUnderscores(text: string) {
+  return text.split("_").map((part, i, parts) => (
+    <Fragment key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <>
+          _{/[A-Za-z0-9]$/.test(part) && <wbr />}
+        </>
+      )}
+    </Fragment>
+  ));
 }
 
 export const EDITOR_NAME_MISSING =
@@ -84,6 +106,14 @@ export default function CombineSurveysPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [savingEditor, setSavingEditor] = useState(false);
+  // Set while the dialog asks whether to replace the saved survey.
+  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
+  const saveEditorButton = useRef<HTMLButtonElement>(null);
+  const downloadButton = useRef<HTMLButtonElement>(null);
+  const clashMessage = useRef<HTMLParagraphElement>(null);
+  // Set when the editor's changes are saved, which removes the button that
+  // saved them: focus then moves on to Download rather than to the page.
+  const [focusDownload, setFocusDownload] = useState(false);
   // Surveys to download as saved, leaving out the editor's unsaved changes.
   const [savedCopyIds, setSavedCopyIds] = useState<string[]>([]);
 
@@ -95,6 +125,15 @@ export default function CombineSurveysPage() {
       .catch((e) => setError((e as Error).message))
       .finally(() => setFetching(false));
   }, []);
+
+  useEffect(() => {
+    if (!focusDownload) return;
+    setFocusDownload(false);
+    // A field clash can keep Download disabled; then its message takes focus.
+    const download = downloadButton.current;
+    if (download && !download.disabled) download.focus();
+    else clashMessage.current?.focus();
+  }, [focusDownload]);
 
   const addQuestion = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -150,18 +189,37 @@ export default function CombineSurveysPage() {
 
   // Saving from here keeps the questions, field names and title chosen on
   // this page, which leaving for the editor would reset.
-  const saveEditorChanges = async () => {
+  const saveEditorChanges = async (choice?: SaveChoice) => {
     setSavingEditor(true);
     setError(null);
+    const openId = editorState.config.id;
     try {
-      // Reload the list before the editor counts as saved, so Download never
-      // turns on while the list still holds the old copy.
-      await saveEditorSurvey(
-        editorState.config,
-        () => dispatch({ type: "markSaved" }),
-        async () => setSurveys((await exportSurveys()).surveys),
+      const found = await saveEditorSurvey(
+        editorState,
+        (record) => {
+          if (record.id !== openId) {
+            // Saved as a new survey: it takes the old one's place here,
+            // since the researcher chose the editor's version.
+            setSelectedIds((prev) => prev.map((id) => (id === openId ? record.id : id)));
+            setFieldOverrides((prev) =>
+              prev[openId] === undefined ? prev : { ...prev, [record.id]: prev[openId] },
+            );
+          }
+          dispatch({ type: "markSaved", record });
+        },
+        {
+          choice,
+          // Reload the list before the editor counts as saved, so Download
+          // never turns on while the list still holds the old copy.
+          beforeMarkSaved: async () => setSurveys((await exportSurveys()).surveys),
+        },
       );
+      // A survey renamed, or whose stored copy changed since, opens the
+      // dialog; a finished save closes it.
+      setSaveConflict(found);
+      if (!found) setFocusDownload(true);
     } catch (e) {
+      setSaveConflict(null);
       const message = (e as Error).message;
       // This page has its own survey name box; say which name is missing.
       setError(message === MISSING_TITLE_MESSAGE ? EDITOR_NAME_MISSING : message);
@@ -199,6 +257,8 @@ export default function CombineSurveysPage() {
         `Downloaded a Qualtrics .qsf with ${ordered.length} grid${ordered.length === 1 ? "" : "s"} ` +
           `in the order shown, and ${fieldCount} embedded field${fieldCount === 1 ? "" : "s"}. ` +
           `In Qualtrics: Create a new project → Survey → Get started → "Import a QSF file", then Publish. ` +
+          `If you add questions to a grid's page, keep the grid last and put follow-up questions above it ` +
+          `or on the next page: unless empty cells are allowed, the grid's Next replaces Qualtrics' Next. ` +
           `Results are under Data & Analysis; if a field's column isn't shown, add it with Column chooser → Embedded Data.`,
       );
     } catch (e) {
@@ -309,22 +369,24 @@ export default function CombineSurveysPage() {
                   key={survey.id}
                   className="flex flex-col gap-2 rounded-lg border border-hairline-warm bg-paper-card p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent-tint text-xs font-bold text-accent">
                       {index + 1}
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="font-semibold text-ink">
+                      <span className="break-words font-semibold text-ink">
                         {survey.name || survey.id.slice(0, 8)}
                       </span>
-                      <span className="break-all font-mono text-[10.5px] text-ink-faint">
+                      <span className="break-words font-mono text-[10.5px] text-ink-faint">
                         Saved in Qualtrics as{" "}
-                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey))}
+                        {breakAtUnderscores(
+                          savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey)),
+                        )}
                       </span>
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
                     <label className="flex items-center gap-1.5 text-xs text-ink-faint">
                       Data field
                       <input
@@ -376,8 +438,9 @@ export default function CombineSurveysPage() {
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-sm font-semibold text-accent">{unsavedEditsError}</p>
               <button
+                ref={saveEditorButton}
                 type="button"
-                onClick={saveEditorChanges}
+                onClick={() => saveEditorChanges()}
                 disabled={savingEditor}
                 className="rounded-md bg-accent-tint px-3 py-1.5 text-sm font-semibold text-accent hover:opacity-90 disabled:opacity-50"
               >
@@ -385,7 +448,10 @@ export default function CombineSurveysPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setSavedCopyIds((prev) => [...prev, editorState.config.id])}
+                onClick={() => {
+                  setSavedCopyIds((prev) => [...prev, editorState.config.id]);
+                  setFocusDownload(true);
+                }}
                 className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
               >
                 Use the saved version instead
@@ -393,13 +459,25 @@ export default function CombineSurveysPage() {
             </div>
           )}
           {fieldCollisionError && (
-            <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>
+            <p ref={clashMessage} tabIndex={-1} className="mt-3 text-sm font-semibold text-accent">
+              {fieldCollisionError}
+            </p>
+          )}
+          {saveConflict && (
+            <SaveChoiceDialog
+              conflict={saveConflict}
+              returnFocusTo={saveEditorButton}
+              onSaveAsNew={() => saveEditorChanges("saveAsNew")}
+              onReplace={() => saveEditorChanges("replace")}
+              onCancel={() => setSaveConflict(null)}
+            />
           )}
         </div>
 
         {/* ── Step 3: download ── */}
         <div className="flex items-center gap-3">
           <button
+            ref={downloadButton}
             type="button"
             onClick={handleDownload}
             disabled={

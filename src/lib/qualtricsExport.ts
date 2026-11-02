@@ -1,4 +1,5 @@
 import { GridConfig } from "../grid-types";
+import { respondentTextsFor } from "./respondentTexts";
 
 export interface QualtricsExportOptions {
   /** Embedded data field used in standard (non-experimental) mode. */
@@ -7,12 +8,6 @@ export interface QualtricsExportOptions {
   prefillsField?: string;
   /** Embedded data field for experimental responses (what was selected). */
   responsesField?: string;
-}
-
-export interface QualtricsMultiQuestionItem {
-	title: string;
-	embeddedDataField: string;
-	config: GridConfig;
 }
 
 /** MIT notice placed at the top of every script GRIDDY exports. */
@@ -43,6 +38,22 @@ export const EXPORT_LICENSE_HEADER = `/*
  */
 `;
 
+/** Qualtrics records a field saved with setJSEmbeddedData under this prefix
+ * and the field's name. */
+export const JS_FIELD_PREFIX = "__js_";
+
+/** The name Qualtrics records a grid's field under, such as
+ * "__js_GridAssignments": the name the Survey Flow declares and the column
+ * researchers see in Data & Analysis. The grid script itself saves the
+ * plain name with setJSEmbeddedData, which adds the prefix. */
+export function recordedFieldName(name: string): string {
+  return `${JS_FIELD_PREFIX}${name}`;
+}
+
+/** Cleans a field name for Qualtrics: letters, digits and underscores, at
+ * most 64 characters, starting with a letter (or with the fallback).
+ * Leading underscores are dropped, so a name typed by the researcher can
+ * never be another grid's recorded "__js_" name. */
 export function sanitizeEmbeddedDataField(name: string, fallback: string): string {
   const cleaned = name
     .trim()
@@ -57,7 +68,8 @@ export function sanitizeEmbeddedDataField(name: string, fallback: string): strin
 }
 
 /** The embedded-data fields a grid exported on its own saves to: the plain
- * names, or the names with the survey's field name ending. */
+ * names, or the names with the survey's field name ending. Qualtrics records
+ * each one as recordedFieldName(name). */
 export function singleGridFieldNames(config: GridConfig): Required<QualtricsExportOptions> {
   const ending = (config.survey.fieldSuffix ?? "").trim();
   // An ending with no letters or digits would clean up to nothing.
@@ -75,6 +87,25 @@ export function singleGridFieldNames(config: GridConfig): Required<QualtricsExpo
   };
 }
 
+/** GRIDDY's question text, or "" when nothing in it is visible (only spaces,
+ * non-breaking spaces or line breaks). Like an empty box, it then leaves the
+ * question written in Qualtrics in place. */
+function exportedQuestionText(text: string | undefined): string {
+  return text && text.trim() ? text : "";
+}
+
+/** JSON for researcher-written text that the script embeds as code. "<" is
+ * escaped so no text can close the script element of a page that embeds
+ * the script ("</script>"), "$" so Qualtrics does not fill in "${...}" as
+ * piped text, and the line and paragraph separators, which strings may not
+ * hold in ES2017. The values the script reads stay exactly as written. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(
+    /[<$\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 export function buildQualtricsSnippet(
   config: GridConfig,
   options: QualtricsExportOptions = {},
@@ -83,14 +114,19 @@ export function buildQualtricsSnippet(
   const prefillsField = options.prefillsField ?? "GridPrefills";
   const responsesField = options.responsesField ?? "GridResponses";
   const exportConfig = {
-    layout: config.layout,
+    // A question made only of spaces counts as blank, so the script shows
+    // the wording written in Qualtrics instead of an empty line.
+    layout: { ...config.layout, questionText: exportedQuestionText(config.layout.questionText) },
     tuning: config.tuning,
-    survey: config.survey,
+    // The grid's own wording for the texts around it goes in once, merged
+    // with GRIDDY's English, as `texts` below.
+    survey: { ...config.survey, respondentTexts: undefined },
     // A switched-off experiment stays in the editor but is not shipped,
     // so its settings and reaction images do not bloat the exported script.
     experimental: config.experimental?.enabled ? config.experimental : null,
   };
   const cfgJson = JSON.stringify(exportConfig, null, 2);
+  const textsJson = scriptJson(respondentTextsFor(config.survey.respondentTexts));
 
   return `${EXPORT_LICENSE_HEADER}
 Qualtrics.SurveyEngine.addOnload(function()
@@ -132,6 +168,39 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	container.setAttribute("data-griddy-root", "");
 
 	var cfg = ${cfgJson};
+
+	// The words GRIDDY adds around the grid: this grid's own wording where
+	// the researcher wrote some, GRIDDY's English for the rest.
+	var texts = ${textsJson};
+
+	// A text with its placeholders, such as {n} or {row}, filled in. One pass
+	// with split rather than a regex (regex escapes do not survive this
+	// template string), so a label that looks like a placeholder is shown as
+	// it is.
+	function fillText(key, values) {
+		var pieces = String(texts[key]).split("{");
+		var text = pieces[0];
+		for (var p = 1; p < pieces.length; p++) {
+			var end = pieces[p].indexOf("}");
+			var name = end > 0 ? pieces[p].slice(0, end) : "";
+			if (name && Object.prototype.hasOwnProperty.call(values, name) && values[name] !== undefined) {
+				text += values[name] + pieces[p].slice(end + 1);
+			} else {
+				text += "{" + pieces[p];
+			}
+		}
+		return text;
+	}
+
+	// Whole sentences joined into one text, with a space between them except
+	// after a full-width stop (Chinese or Japanese), which needs none.
+	function joinSentences(sentences) {
+		return sentences.reduce(function (text, sentence) {
+			if (!text) return sentence;
+			return text + ("。！？".indexOf(text.charAt(text.length - 1)) === -1 ? " " : "") + sentence;
+		}, "");
+	}
+
 	var surveyCfg = cfg.survey || {};
 	var categories = [];
 	var allowInteraction = !!surveyCfg.allowInteraction;
@@ -315,12 +384,42 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		});
 	}
 
+	// Qualtrics' new survey-taking experience (the default for new surveys
+	// since June 2026) records only what setJSEmbeddedData saves, under
+	// "__js_" and the field's name; there setEmbeddedData and
+	// getEmbeddedData are stubs that only log that they are deprecated. The
+	// older layouts have both, so a survey whose Survey Flow declares the
+	// plain name keeps recording it there. A call that fails is skipped, so
+	// saving never stops the grid, its reminder or its Next button.
+	function isDeprecatedStub(fn) {
+		return String(fn).indexOf("deprecated") !== -1;
+	}
+
+	function tryEngine(call) {
+		try {
+			return call(Qualtrics.SurveyEngine);
+		} catch (e) {
+			return undefined;
+		}
+	}
+
+	function saveField(name, value) {
+		tryEngine(function (engine) {
+			if (typeof engine.setJSEmbeddedData === "function") engine.setJSEmbeddedData(name, value);
+		});
+		tryEngine(function (engine) {
+			if (typeof engine.setEmbeddedData === "function" && !isDeprecatedStub(engine.setEmbeddedData)) {
+				engine.setEmbeddedData(name, value);
+			}
+		});
+	}
+
 	function persistAll() {
 		if (isExperimental) {
-			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(prefillsField)}, JSON.stringify(prefills));
-			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(responsesField)}, JSON.stringify(experimentalResponses));
+			saveField(${JSON.stringify(prefillsField)}, JSON.stringify(prefills));
+			saveField(${JSON.stringify(responsesField)}, JSON.stringify(experimentalResponses));
 		} else if (allowInteraction && categories.length > 0) {
-			Qualtrics.SurveyEngine.setEmbeddedData(${JSON.stringify(embeddedDataField)}, JSON.stringify(assignments));
+			saveField(${JSON.stringify(embeddedDataField)}, JSON.stringify(assignments));
 		} else {
 			// A grid respondents only look at has no answers to record.
 			return;
@@ -345,12 +444,22 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	// Answers already recorded in this response: going Back to this page, or
 	// resuming a saved response, shows the grid as it was left (and the same
-	// pre-fills), instead of an empty grid that would overwrite them.
+	// pre-fills), instead of an empty grid that would overwrite them. The
+	// "__js_" field is read first, then the plain name, which holds answers
+	// an older GRIDDY script saved in the older layouts.
 	function readSavedField(field) {
+		var raw = tryEngine(function (engine) {
+			return typeof engine.getJSEmbeddedData === "function" ? engine.getJSEmbeddedData(field) : "";
+		});
+		if (!raw || typeof raw !== "string") {
+			raw = tryEngine(function (engine) {
+				return typeof engine.getEmbeddedData === "function" && !isDeprecatedStub(engine.getEmbeddedData)
+					? engine.getEmbeddedData(field)
+					: "";
+			});
+		}
+		if (!raw || typeof raw !== "string") return null;
 		try {
-			var engine = Qualtrics.SurveyEngine;
-			var raw = typeof engine.getEmbeddedData === "function" ? engine.getEmbeddedData(field) : "";
-			if (!raw || typeof raw !== "string") return null;
 			var parsed = JSON.parse(raw);
 			return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
 		} catch (e) {
@@ -613,7 +722,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			bottomDiv.style.flexShrink = "0";
 			bottomDiv.style.padding = "2px";
 			var select = document.createElement("select");
-			select.setAttribute("aria-label", "Reaction to " + catName + " in " + rowColText(key));
+			select.setAttribute("aria-label", fillText("reactionDropdownName", cellValues(key, catName)));
 			select.style.width = "100%";
 			select.style.border = "1px solid #e2dccf";
 			select.style.borderRadius = "4px";
@@ -624,7 +733,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 			var emptyOpt = document.createElement("option");
 			emptyOpt.value = "";
-			emptyOpt.textContent = "\u2014 react \u2014";
+			emptyOpt.textContent = texts.chooseReaction;
 			select.appendChild(emptyOpt);
 
 			responseLabels.forEach(function (lbl) {
@@ -845,7 +954,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 
 		var select = document.createElement("select");
-		select.setAttribute("aria-label", "Label for " + rowColText(key));
+		select.setAttribute("aria-label", fillText("dropdownName", cellValues(key)));
 		select.style.width = "100%";
 		select.style.minWidth = "0";
 		select.style.flexShrink = "0";
@@ -858,7 +967,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 		var emptyOption = document.createElement("option");
 		emptyOption.value = "";
-		emptyOption.textContent = "Choose label";
+		emptyOption.textContent = texts.chooseLabel;
 		select.appendChild(emptyOption);
 
 		categories.forEach(function (cat) {
@@ -937,7 +1046,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var delBtn = document.createElement("button");
 		delBtn.type = "button";
 		delBtn.textContent = "×";
-		delBtn.title = "Clear cell";
+		delBtn.title = texts.clearButtonTitle;
 		delBtn.style.position = "absolute";
 		delBtn.style.top = "2px";
 		delBtn.style.right = "2px";
@@ -1110,21 +1219,25 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var keyboardPick = null;
 	var keyboardPickChip = null;
 
-	function rowColText(key) {
+	// What the texts that name a cell fill in: its row and column, from its
+	// key "r{row}-c{col}", and the label and reaction it holds.
+	function cellValues(key, label, reaction) {
 		var parts = key.slice(1).split("-c");
-		return "row " + parts[0] + ", column " + parts[1];
+		return { row: parts[0], col: parts[1], label: label, reaction: reaction };
 	}
 
+	// Only cells a respondent can act on are described: in an experiment,
+	// the pre-filled ones.
 	function describeCell(key) {
-		var text = rowColText(key) + ": ";
 		if (isExperimental) {
-			text += prefills[key] || "empty";
-			if (experimentalResponses[key]) text += ", reaction " + experimentalResponses[key];
-			else if (prefills[key]) text += ", no reaction yet";
-		} else {
-			text += assignments[key] || "empty";
+			if (!prefills[key]) return fillText("cellEmpty", cellValues(key));
+			return experimentalResponses[key]
+				? fillText("cellReaction", cellValues(key, prefills[key], experimentalResponses[key]))
+				: fillText("cellNoReaction", cellValues(key, prefills[key]));
 		}
-		return text.charAt(0).toUpperCase() + text.slice(1);
+		return assignments[key]
+			? fillText("cellLabel", cellValues(key, assignments[key]))
+			: fillText("cellEmpty", cellValues(key));
 	}
 
 	function cellIsActionable(key, isCenterCell, isBlockedCell) {
@@ -1178,7 +1291,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	function enableKeyboardPick(chip, value) {
 		chip.setAttribute("aria-pressed", "false");
-		chip.setAttribute("aria-label", chip.textContent + ". Select it to pick it up, then select a cell to place it.");
+		chip.setAttribute("aria-label", fillText("chipHelp", { label: chip.textContent }));
 		// A button gets a click from Enter, Space and screen readers, so a key
 		// press cannot toggle twice. Mouse clicks and taps do nothing here.
 		chip.addEventListener("click", function (e) {
@@ -1348,7 +1461,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		toolbar.style.marginBottom = "6px";
 
 		var toolbarLabel = document.createElement("span");
-		toolbarLabel.textContent = "Placing:";
+		toolbarLabel.textContent = texts.placing;
+		// GRIDDY's texts take the direction of their own words, so their
+		// punctuation stays in place whatever the survey's direction.
+		toolbarLabel.setAttribute("dir", "auto");
 		toolbarLabel.style.fontSize = "11px";
 		toolbarLabel.style.fontWeight = "600";
 		toolbarLabel.style.color = "#6b6455";
@@ -1408,7 +1524,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		dragHelp.style.marginBottom = "8px";
 
 		var dragLabel = document.createElement("span");
-		dragLabel.textContent = "Drag a label onto a cell, or select a label and then a cell:";
+		dragLabel.textContent = texts.dragLabel;
+		dragLabel.setAttribute("dir", "auto");
 		dragLabel.style.fontSize = "11px";
 		dragLabel.style.fontWeight = "600";
 		dragLabel.style.color = "#6b6455";
@@ -1422,7 +1539,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		categories.forEach(function (cat) {
 			dragTray.appendChild(createCategoryChip(cat, false));
 		});
-		dragTray.appendChild(createCategoryChip("Clear cell", true));
+		dragTray.appendChild(createCategoryChip(texts.clearCellChip, true));
 
 		dragHelp.appendChild(dragTray);
 		container.appendChild(dragHelp);
@@ -1437,7 +1554,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respToolbar.style.marginBottom = "6px";
 
 		var respToolbarLabel = document.createElement("span");
-		respToolbarLabel.textContent = "Reacting:";
+		respToolbarLabel.textContent = texts.reacting;
+		respToolbarLabel.setAttribute("dir", "auto");
 		respToolbarLabel.style.fontSize = "11px";
 		respToolbarLabel.style.fontWeight = "600";
 		respToolbarLabel.style.color = "#6b6455";
@@ -1497,7 +1615,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respDragHelp.style.marginBottom = "8px";
 
 		var respDragLabel = document.createElement("span");
-		respDragLabel.textContent = "Drag a reaction onto a cell, or select a reaction and then a cell:";
+		respDragLabel.textContent = texts.dragReaction;
+		respDragLabel.setAttribute("dir", "auto");
 		respDragLabel.style.fontSize = "11px";
 		respDragLabel.style.fontWeight = "600";
 		respDragLabel.style.color = "#6b6455";
@@ -1511,7 +1630,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		responseLabels.forEach(function (lbl) {
 			respDragTray.appendChild(createResponseChip(lbl, false));
 		});
-		respDragTray.appendChild(createResponseChip("Clear reaction", true));
+		respDragTray.appendChild(createResponseChip(texts.clearReactionChip, true));
 
 		respDragHelp.appendChild(respDragTray);
 		container.appendChild(respDragHelp);
@@ -1721,7 +1840,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	var scrollHint = document.createElement("div");
 	scrollHint.setAttribute("data-griddy-scroll-hint", "");
-	scrollHint.textContent = "↔ Part of this grid is out of view. Scroll sideways to see all of it.";
+	scrollHint.textContent = texts.scrollHint;
+	scrollHint.setAttribute("dir", "auto");
 	scrollHint.style.display = "none";
 	scrollHint.style.margin = "0 0 6px";
 	scrollHint.style.fontSize = "12px";
@@ -1835,10 +1955,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		parts.badge.textContent = emptyCount > 0 ? String(emptyCount) : "";
 		parts.badge.style.display = emptyCount > 0 ? "block" : "none";
 		parts.button.style.backgroundColor = emptyCount > 0 ? "#c2410c" : "rgba(42,36,28,0.78)";
-		parts.button.setAttribute(
-			"aria-label",
-			"Scroll the grid " + parts.side + (emptyCount > 0 ? " (" + emptyCount + (emptyCount === 1 ? " empty cell there)" : " empty cells there)") : "")
-		);
+		// "scrollLeft", or "scrollLeftEmptyOne" and so on when the reminder
+		// counts empty cells past this arrow.
+		var key = parts.side === "left" ? "scrollLeft" : "scrollRight";
+		if (emptyCount > 0) key += emptyCount === 1 ? "EmptyOne" : "EmptyOther";
+		parts.button.setAttribute("aria-label", fillText(key, { n: emptyCount }));
 	}
 
 	function updateIndicators() {
@@ -1876,6 +1997,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	reminder.style.fontSize = "13px";
 	reminder.style.lineHeight = "1.4";
 	var reminderText = document.createElement("div");
+	reminderText.setAttribute("dir", "auto");
 	reminder.appendChild(reminderText);
 	var reminderActions = document.createElement("div");
 	reminderActions.style.display = "flex";
@@ -1901,35 +2023,28 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		reminderActions.appendChild(b);
 		return b;
 	}
-	var showMeBtn = makeActionButton("Show me", false);
-	var continueBtn = makeActionButton("Continue anyway", true);
+	var showMeBtn = makeActionButton(texts.showMe, false);
+	var continueBtn = makeActionButton(texts.continueAnyway, true);
 
+	// How many cells are left, where they are, and what to do. Each sentence
+	// is a whole text: its "One" version for 1 cell, its "Other" for more.
 	function describeMissing(missing) {
 		var n = missing.length;
-		var them = n === 1 ? "it" : "them";
 		var off = offscreenCounts(missing);
 		var offCount = off.left + off.right;
-		var text = isExperimental
-			? (n === 1 ? "1 pre-filled cell has no reaction yet" : n + " pre-filled cells have no reaction yet")
-			: (n === 1 ? "1 cell is still empty" : n + " cells are still empty");
-		if (offCount > 0) {
-			if (offCount === n) {
-				text += n === 1 ? ", and it is off-screen" : ", all of them off-screen";
-			} else {
-				text += ", including " + offCount + " off-screen";
-			}
-		}
-		text += n === 1 ? ". It is outlined in orange." : ". They are outlined in orange.";
-		if (skipBehavior === "force") {
-			text += isExperimental
-				? " Please react to every outlined cell before continuing."
-				: " Please fill in every outlined cell before continuing.";
+		var kind = isExperimental ? "unreacted" : "empty";
+		var count;
+		if (offCount === 0) {
+			count = fillText(kind + (n === 1 ? "One" : "Other"), { n: n });
+		} else if (offCount === n) {
+			count = fillText(kind + (n === 1 ? "OffscreenOne" : "OffscreenOther"), { n: n });
 		} else {
-			text += isExperimental
-				? " You can react to " + them + " now or continue anyway."
-				: " You can fill " + them + " in now or continue anyway.";
+			count = fillText(kind + (offCount === 1 ? "SomeOffscreenOne" : "SomeOffscreenOther"), { n: n, off: offCount });
 		}
-		return text;
+		var action = skipBehavior === "force"
+			? texts[isExperimental ? "requireReact" : "requireFill"]
+			: texts[(isExperimental ? "remindReact" : "remindFill") + (n === 1 ? "One" : "Other")];
+		return joinSentences([count, texts[n === 1 ? "outlinedOne" : "outlinedOther"], action]);
 	}
 
 	function refreshHighlights() {
@@ -2011,17 +2126,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	// what to do, without the visual details.
 	function announcement(missing) {
 		var n = missing.length;
-		var text = isExperimental
-			? (n === 1 ? "1 pre-filled cell has no reaction yet." : n + " pre-filled cells have no reaction yet.")
-			: (n === 1 ? "1 cell is still empty." : n + " cells are still empty.");
-		if (skipBehavior === "force") {
-			text += isExperimental
-				? " Please react to every pre-filled cell before continuing."
-				: " Please fill in every cell before continuing.";
-		} else {
-			text += " Use Show me to find " + (n === 1 ? "it" : "them") + ", or Continue anyway.";
-		}
-		return text;
+		var count = fillText((isExperimental ? "unreacted" : "empty") + (n === 1 ? "One" : "Other"), { n: n });
+		var action = skipBehavior === "force"
+			? texts[isExperimental ? "spokenRequireReact" : "spokenRequireFill"]
+			: texts[n === 1 ? "spokenRemindOne" : "spokenRemindOther"];
+		return joinSentences([count, action]);
 	}
 
 	function showReminder() {
@@ -2117,7 +2226,12 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			return;
 		}
 		grids.forEach(function (g) {
-			if (g.isShown()) g.persist();
+			if (!g.isShown()) return;
+			// A grid whose save fails, such as one from an older GRIDDY
+			// script, never keeps the respondent on this page.
+			try {
+				g.persist();
+			} catch (e) { /* Next still moves on */ }
 		});
 		question.clickNextButton();
 	}
@@ -2147,7 +2261,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	var nextBtn = document.createElement("button");
 	nextBtn.type = "button";
-	nextBtn.textContent = "Next";
+	nextBtn.textContent = texts.next;
 	nextBtn.style.border = "1px solid #8a2e3b";
 	nextBtn.style.backgroundColor = "#8a2e3b";
 	nextBtn.style.color = "#ffffff";
@@ -2212,8 +2326,9 @@ Qualtrics.SurveyEngine.addOnUnload(function()
  * Create a new project -> Survey -> Get started -> "Import a QSF file". Importing it
  * builds the whole survey for the researcher: one Text/Graphic question
  * per grid (with the rendering JavaScript already attached), every
- * embedded-data field pre-declared in the Survey Flow, and each grid on
- * its own page. No manual question/field/JS setup required.
+ * embedded-data field pre-declared in the Survey Flow under the "__js_"
+ * name Qualtrics records it as, and each grid on its own page. No manual
+ * question/field/JS setup required.
  * ------------------------------------------------------------------ */
 
 export interface QualtricsQsfItem {
@@ -2240,7 +2355,9 @@ function isExperimentalConfig(config: GridConfig): boolean {
   return !!(config.experimental && config.experimental.enabled);
 }
 
-/** Embedded-data field names a given item will write to, in display order. */
+/** The embedded-data field names a given item's script saves its answers
+ * under, in display order. Qualtrics records each one, and the .qsf
+ * declares it, as recordedFieldName(name). */
 export function qsfEmbeddedFields(item: QualtricsQsfItem): string[] {
   if (isExperimentalConfig(item.config)) {
     return [
@@ -2324,12 +2441,13 @@ export function buildQualtricsQsf(
 
     // The grid script draws the question itself. Qualtrics shows QuestionText
     // (HTML) in its builder and for a moment before the script runs, so the
-    // researcher's text is escaped. When GRIDDY's question is blank it stays
-    // blank, so the question can be written in Qualtrics instead (the script
-    // keeps it); the title still names the question in the builder.
-    const questionText =
-      item.config.layout.questionText || item.title || `Grid question ${index + 1}`;
-    const questionHtml = escapeHtml(item.config.layout.questionText || "");
+    // researcher's text is escaped. When GRIDDY's question is blank, or only
+    // spaces, it stays blank, so the question can be written in Qualtrics
+    // instead (the script keeps it); the title still names the question in
+    // the builder.
+    const griddyQuestion = exportedQuestionText(item.config.layout.questionText);
+    const questionText = griddyQuestion || item.title || `Grid question ${index + 1}`;
+    const questionHtml = escapeHtml(griddyQuestion);
 
     questionElements.push({
       SurveyID: surveyId,
@@ -2368,7 +2486,9 @@ export function buildQualtricsQsf(
       },
     });
 
-    fields.forEach((field) => {
+    // Qualtrics records what the script saves under the "__js_" names, so
+    // those are the fields the Survey Flow declares.
+    fields.map(recordedFieldName).forEach((field) => {
       if (seenFields.has(field)) return;
       seenFields.add(field);
       embeddedData.push({
@@ -2568,520 +2688,4 @@ export function buildQualtricsQsfForConfig(
     [{ title: config.name || name, config, ...singleGridFieldNames(config) }],
     name,
   );
-}
-
-export function buildQualtricsMultiQuestionSnippet(
-  items: QualtricsMultiQuestionItem[],
-): string {
-  const payload = items.map((item) => ({
-    title: item.title,
-    embeddedDataField: sanitizeEmbeddedDataField(
-      item.embeddedDataField,
-      "GridAssignments",
-    ),
-    layout: item.config.layout,
-    tuning: item.config.tuning,
-    survey: item.config.survey,
-  }));
-
-  const payloadJson = JSON.stringify(payload, null, 2);
-
-  return `${EXPORT_LICENSE_HEADER}
-Qualtrics.SurveyEngine.addOnload(function()
-{
-	/* Optional: code to run when the page loads */
-
-});
-
-Qualtrics.SurveyEngine.addOnReady(function()
-{
-	var question = this;
-	var container = this.getQuestionTextContainer();
-	if (!container) return;
-
-	container.innerHTML = "";
-
-	var steps = ${payloadJson};
-	if (!Array.isArray(steps) || steps.length === 0) {
-		container.textContent = "No exported questions were provided.";
-		return;
-	}
-
-	var currentStepIndex = 0;
-	var allAssignments = {};
-
-	function hexToRgba(hex, alpha) {
-		var r = parseInt(hex.slice(1, 3), 16);
-		var g = parseInt(hex.slice(3, 5), 16);
-		var b = parseInt(hex.slice(5, 7), 16);
-		return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
-	}
-
-	function renderStep() {
-		var step = steps[currentStepIndex];
-		var cfg = {
-			layout: step.layout,
-			tuning: step.tuning,
-			survey: step.survey
-		};
-		var surveyCfg = cfg.survey || {};
-		var categories = [];
-		var allowInteraction = !!surveyCfg.allowInteraction;
-		var selectionMode = surveyCfg.selectionMode || "paint";
-		var activeCategory = null;
-		var draggedCategory = null;
-		var assignments = allAssignments[step.embeddedDataField] || {};
-		allAssignments[step.embeddedDataField] = assignments;
-
-		if (surveyCfg.categoriesCsv) {
-			categories = surveyCfg.categoriesCsv
-				.split(",")
-				.map(function (c) { return c.trim(); })
-				.filter(function (c) { return c.length > 0; });
-		}
-
-		if (categories.length > 0) {
-			activeCategory = categories[0];
-		}
-
-		function getCategoryMeta(catName) {
-			if (!surveyCfg.categoryMeta) return {};
-			return surveyCfg.categoryMeta[catName] || {};
-		}
-
-		function persistAssignments() {
-			Qualtrics.SurveyEngine.setEmbeddedData(step.embeddedDataField, JSON.stringify(assignments));
-		}
-
-		function resetCellBaseStyles(cellRef, isCenterCell) {
-			cellRef.style.display = "flex";
-			cellRef.style.flexDirection = "column";
-			cellRef.style.alignItems = "stretch";
-			cellRef.style.justifyContent = "center";
-			cellRef.style.overflow = "hidden";
-			cellRef.style.backgroundColor = isCenterCell ? "#e0f2fe" : "#ffffff";
-			cellRef.style.borderColor = isCenterCell ? "#38bdf8" : "#cbd5e1";
-			cellRef.style.color = "#0f172a";
-		}
-
-		function renderCellContent(cellRef, catName, catColor, catImage) {
-			cellRef.innerHTML = "";
-			resetCellBaseStyles(cellRef, false);
-			cellRef.style.backgroundColor = hexToRgba(catColor, 0.2);
-			cellRef.style.borderColor = catColor;
-
-			if (catImage) {
-				var imgWrap = document.createElement("div");
-				imgWrap.style.flex = "1";
-				imgWrap.style.minHeight = "0";
-				imgWrap.style.display = "flex";
-				imgWrap.style.alignItems = "center";
-				imgWrap.style.justifyContent = "center";
-				imgWrap.style.overflow = "hidden";
-				imgWrap.style.padding = "2px";
-
-				var img = document.createElement("img");
-				img.src = catImage;
-				img.alt = catName;
-				img.style.maxWidth = "100%";
-				img.style.maxHeight = "100%";
-				img.style.objectFit = "contain";
-				imgWrap.appendChild(img);
-				cellRef.appendChild(imgWrap);
-			}
-
-			var textWrap = document.createElement("div");
-			textWrap.style.textAlign = "center";
-			textWrap.style.lineHeight = "1.2";
-			textWrap.style.fontWeight = "500";
-
-			if (catImage) {
-				textWrap.style.flexShrink = "0";
-				textWrap.style.padding = "0 2px 2px";
-				textWrap.style.fontSize = "9px";
-				textWrap.style.whiteSpace = "nowrap";
-				textWrap.style.overflow = "hidden";
-				textWrap.style.textOverflow = "ellipsis";
-			} else {
-				textWrap.style.flex = "1";
-				textWrap.style.display = "flex";
-				textWrap.style.alignItems = "center";
-				textWrap.style.justifyContent = "center";
-				textWrap.style.padding = "4px";
-				textWrap.style.fontSize = "10px";
-			}
-
-			textWrap.textContent = catName;
-			cellRef.appendChild(textWrap);
-		}
-
-		function renderDropdownCell(cellRef, key, isCenterCell) {
-			cellRef.innerHTML = "";
-			resetCellBaseStyles(cellRef, isCenterCell);
-			cellRef.style.padding = "4px";
-			cellRef.style.gap = "4px";
-
-			if (isCenterCell) {
-				var centerLabel = document.createElement("div");
-				centerLabel.textContent = cfg.layout.centerCellLabel || "Your House";
-				centerLabel.style.fontSize = "10px";
-				centerLabel.style.fontWeight = "600";
-				centerLabel.style.textAlign = "center";
-				centerLabel.style.lineHeight = "1.2";
-				cellRef.appendChild(centerLabel);
-			}
-
-			var select = document.createElement("select");
-			select.style.width = "100%";
-			select.style.minWidth = "0";
-			select.style.border = "1px solid #cbd5e1";
-			select.style.borderRadius = "6px";
-			select.style.backgroundColor = "#ffffff";
-			select.style.padding = "4px 6px";
-			select.style.fontSize = "10px";
-			select.style.color = "#0f172a";
-
-			var emptyOption = document.createElement("option");
-			emptyOption.value = "";
-			emptyOption.textContent = "Choose label";
-			select.appendChild(emptyOption);
-
-			categories.forEach(function (cat) {
-				var option = document.createElement("option");
-				option.value = cat;
-				option.textContent = cat;
-				select.appendChild(option);
-			});
-
-			select.value = assignments[key] || "";
-			select.onchange = function () {
-				if (!select.value) {
-					delete assignments[key];
-				} else {
-					assignments[key] = select.value;
-				}
-				persistAssignments();
-				renderCell(cellRef, key, isCenterCell);
-			};
-
-			cellRef.appendChild(select);
-		}
-
-		function renderCell(cellRef, key, isCenterCell) {
-			var assigned = assignments[key];
-			if (assigned) {
-				var meta = getCategoryMeta(assigned);
-				renderCellContent(cellRef, assigned, meta.color || "#60a5fa", meta.imageUrl || "");
-				return;
-			}
-
-			if (allowInteraction && selectionMode === "dropdown" && !isCenterCell) {
-				renderDropdownCell(cellRef, key, isCenterCell);
-				return;
-			}
-
-			cellRef.innerHTML = "";
-			resetCellBaseStyles(cellRef, isCenterCell);
-
-			if (isCenterCell) {
-				var label = document.createElement("div");
-				label.textContent = cfg.layout.centerCellLabel || "Your House";
-				label.style.width = "100%";
-				label.style.padding = "4px";
-				label.style.fontSize = "10px";
-				label.style.fontWeight = "500";
-				label.style.textAlign = "center";
-				label.style.lineHeight = "1.2";
-				cellRef.appendChild(label);
-			}
-		}
-
-		function createCategoryChip(catName, isClear) {
-			var meta = getCategoryMeta(catName);
-			var color = isClear ? "#94a3b8" : (meta.color || "#60a5fa");
-			var chip = document.createElement("button");
-			chip.type = "button";
-			chip.textContent = catName;
-			chip.style.display = "inline-flex";
-			chip.style.alignItems = "center";
-			chip.style.justifyContent = "center";
-			chip.style.borderRadius = "9999px";
-			chip.style.border = "1px solid #e2e8f0";
-			chip.style.padding = "4px 10px";
-			chip.style.fontSize = "11px";
-			chip.style.fontWeight = "500";
-			chip.style.backgroundColor = isClear ? "#ffffff" : hexToRgba(color, 0.12);
-			chip.style.color = "#334155";
-			chip.style.cursor = "grab";
-			chip.draggable = true;
-
-			chip.ondragstart = function (event) {
-				draggedCategory = isClear ? "__CLEAR__" : catName;
-				if (event.dataTransfer) {
-					event.dataTransfer.setData("text/plain", draggedCategory);
-					event.dataTransfer.effectAllowed = "move";
-				}
-			};
-
-			chip.ondragend = function () {
-				draggedCategory = null;
-			};
-
-			return chip;
-		}
-
-		container.innerHTML = "";
-
-		var progress = document.createElement("div");
-		progress.style.marginBottom = "8px";
-		progress.style.fontSize = "12px";
-		progress.style.fontWeight = "600";
-		progress.style.color = "#334155";
-		progress.textContent =
-			"Question " + (currentStepIndex + 1) + " of " + steps.length + ": " + (step.title || "Grid question");
-		container.appendChild(progress);
-
-		var questionText = document.createElement("p");
-		questionText.textContent = cfg.layout.questionText;
-		questionText.style.marginBottom = "8px";
-		container.appendChild(questionText);
-
-		if (allowInteraction && categories.length > 0 && selectionMode === "paint") {
-			var toolbar = document.createElement("div");
-			toolbar.style.display = "flex";
-			toolbar.style.flexWrap = "wrap";
-			toolbar.style.alignItems = "center";
-			toolbar.style.gap = "4px";
-			toolbar.style.marginBottom = "6px";
-
-			var toolbarLabel = document.createElement("span");
-			toolbarLabel.textContent = "Placing:";
-			toolbarLabel.style.fontSize = "11px";
-			toolbarLabel.style.fontWeight = "600";
-			toolbarLabel.style.color = "#475569";
-			toolbar.appendChild(toolbarLabel);
-
-			categories.forEach(function (cat) {
-				var meta = getCategoryMeta(cat);
-				var color = meta.color || "#60a5fa";
-				var btn = document.createElement("button");
-				btn.type = "button";
-				btn.dataset.cat = cat;
-				btn.style.display = "inline-flex";
-				btn.style.alignItems = "center";
-				btn.style.gap = "4px";
-				btn.style.borderRadius = "9999px";
-				btn.style.border = cat === activeCategory ? "1px solid " + color : "1px solid #e2e8f0";
-				btn.style.padding = "2px 8px";
-				btn.style.fontSize = "11px";
-				btn.style.backgroundColor = cat === activeCategory ? hexToRgba(color, 0.15) : "#ffffff";
-				btn.style.color = "#334155";
-				btn.style.cursor = "pointer";
-
-				var dot = document.createElement("span");
-				dot.style.display = "inline-block";
-				dot.style.width = "8px";
-				dot.style.height = "8px";
-				dot.style.borderRadius = "9999px";
-				dot.style.backgroundColor = color;
-				dot.style.flexShrink = "0";
-				btn.appendChild(dot);
-				btn.appendChild(document.createTextNode(cat));
-
-				btn.onclick = function () {
-					activeCategory = cat;
-					Array.prototype.forEach.call(toolbar.querySelectorAll("button"), function (other) {
-						var otherMeta = getCategoryMeta(other.dataset.cat);
-						var otherColor = otherMeta.color || "#60a5fa";
-						var isActive = other.dataset.cat === cat;
-						other.style.backgroundColor = isActive ? hexToRgba(otherColor, 0.15) : "#ffffff";
-						other.style.borderColor = isActive ? otherColor : "#e2e8f0";
-					});
-				};
-
-				toolbar.appendChild(btn);
-			});
-
-			container.appendChild(toolbar);
-		}
-
-		if (allowInteraction && categories.length > 0 && selectionMode === "dragdrop") {
-			var dragHelp = document.createElement("div");
-			dragHelp.style.display = "flex";
-			dragHelp.style.flexDirection = "column";
-			dragHelp.style.gap = "6px";
-			dragHelp.style.marginBottom = "8px";
-
-			var dragLabel = document.createElement("span");
-			dragLabel.textContent = "Drag a label onto a cell:";
-			dragLabel.style.fontSize = "11px";
-			dragLabel.style.fontWeight = "600";
-			dragLabel.style.color = "#475569";
-			dragHelp.appendChild(dragLabel);
-
-			var dragTray = document.createElement("div");
-			dragTray.style.display = "flex";
-			dragTray.style.flexWrap = "wrap";
-			dragTray.style.gap = "6px";
-
-			categories.forEach(function (cat) {
-				dragTray.appendChild(createCategoryChip(cat, false));
-			});
-			dragTray.appendChild(createCategoryChip("Clear cell", true));
-
-			dragHelp.appendChild(dragTray);
-			container.appendChild(dragHelp);
-		}
-
-		var wrapper = document.createElement("div");
-		wrapper.style.width = cfg.tuning.previewWidth + "px";
-		wrapper.style.height = cfg.tuning.previewHeight + "px";
-		wrapper.style.border = "1px solid #cbd5e1";
-		wrapper.style.backgroundColor = "#f8fafc";
-		wrapper.style.overflow = "auto";
-		wrapper.style.borderRadius = "0.75rem";
-		wrapper.style.position = "relative";
-
-		if (cfg.layout.backgroundImageUrl) {
-			wrapper.style.backgroundImage = "url('" + cfg.layout.backgroundImageUrl + "')";
-			wrapper.style.backgroundRepeat = "no-repeat";
-			wrapper.style.backgroundPosition = "center";
-			wrapper.style.backgroundSize = "contain";
-		}
-
-		var grid = document.createElement("div");
-		grid.style.display = "grid";
-		grid.style.width = "100%";
-		grid.style.height = "100%";
-		grid.style.boxSizing = "border-box";
-		grid.style.gridTemplateColumns = "repeat(" + cfg.layout.cols + ", minmax(0, 1fr))";
-		grid.style.gridTemplateRows = "repeat(" + cfg.layout.rows + ", minmax(0, 1fr))";
-		grid.style.gap = cfg.tuning.gridGap + "px";
-		grid.style.padding = cfg.tuning.gridPadding + "px";
-
-		var totalCells = cfg.layout.rows * cfg.layout.cols;
-		var centerRow = cfg.layout.centerRow || Math.ceil(cfg.layout.rows / 2);
-		var centerCol = cfg.layout.centerCol || Math.ceil(cfg.layout.cols / 2);
-
-		for (var i = 0; i < totalCells; i++) {
-			var row = Math.floor(i / cfg.layout.cols) + 1;
-			var col = (i % cfg.layout.cols) + 1;
-			var isCenter = cfg.layout.includeCenterCell && row === centerRow && col === centerCol;
-			var key = "r" + row + "-c" + col;
-			var cell = document.createElement("div");
-			cell.style.borderRadius = "0.375rem";
-			cell.style.border = "1px solid #cbd5e1";
-			cell.style.minWidth = "0";
-			cell.style.minHeight = "0";
-			cell.style.fontSize = "10px";
-			cell.style.fontWeight = "500";
-			cell.style.transition = "border-color 120ms ease, background-color 120ms ease";
-
-			renderCell(cell, key, isCenter);
-
-			if (allowInteraction && selectionMode === "paint") {
-				cell.style.cursor = isCenter ? "default" : "pointer";
-				(function (cellRef, cellKey, isCenterCell) {
-					cellRef.onclick = function () {
-						if (isCenterCell) return;
-						if (!activeCategory) return;
-						if (assignments[cellKey] === activeCategory) {
-							delete assignments[cellKey];
-						} else {
-							assignments[cellKey] = activeCategory;
-						}
-						persistAssignments();
-						renderCell(cellRef, cellKey, isCenterCell);
-					};
-				})(cell, key, isCenter);
-			}
-
-			if (allowInteraction && selectionMode === "dragdrop") {
-				(function (cellRef, cellKey, isCenterCell) {
-					cellRef.style.cursor = isCenterCell ? "default" : "copy";
-					cellRef.ondragover = function (event) {
-						if (isCenterCell) return;
-						event.preventDefault();
-						if (event.dataTransfer) {
-							event.dataTransfer.dropEffect = "move";
-						}
-						cellRef.style.borderColor = "#0f172a";
-						cellRef.style.backgroundColor = "#e2e8f0";
-					};
-					cellRef.ondragleave = function () {
-						renderCell(cellRef, cellKey, isCenterCell);
-					};
-					cellRef.ondrop = function (event) {
-						if (isCenterCell) return;
-						event.preventDefault();
-						var dropped = draggedCategory;
-						if (!dropped && event.dataTransfer) {
-							dropped = event.dataTransfer.getData("text/plain");
-						}
-						if (!dropped) {
-							renderCell(cellRef, cellKey, isCenterCell);
-							return;
-						}
-						if (dropped === "__CLEAR__") {
-							delete assignments[cellKey];
-						} else {
-							assignments[cellKey] = dropped;
-						}
-						persistAssignments();
-						renderCell(cellRef, cellKey, isCenterCell);
-					};
-				})(cell, key, isCenter);
-			}
-
-			grid.appendChild(cell);
-		}
-
-		wrapper.appendChild(grid);
-		container.appendChild(wrapper);
-
-		var controls = document.createElement("div");
-		controls.style.marginTop = "10px";
-		controls.style.display = "flex";
-		controls.style.justifyContent = "space-between";
-		controls.style.alignItems = "center";
-
-		var fieldLabel = document.createElement("span");
-		fieldLabel.style.fontSize = "11px";
-		fieldLabel.style.color = "#64748b";
-		fieldLabel.textContent = "Embedded field: " + step.embeddedDataField;
-		controls.appendChild(fieldLabel);
-
-		var nextBtn = document.createElement("button");
-		nextBtn.type = "button";
-		nextBtn.textContent = currentStepIndex < steps.length - 1 ? "Next question" : "Finish";
-		nextBtn.style.border = "1px solid #0f172a";
-		nextBtn.style.backgroundColor = "#0f172a";
-		nextBtn.style.color = "#ffffff";
-		nextBtn.style.borderRadius = "8px";
-		nextBtn.style.padding = "8px 12px";
-		nextBtn.style.fontSize = "12px";
-		nextBtn.style.fontWeight = "600";
-		nextBtn.style.cursor = "pointer";
-		nextBtn.onclick = function () {
-			persistAssignments();
-			if (currentStepIndex < steps.length - 1) {
-				currentStepIndex += 1;
-				renderStep();
-				return;
-			}
-			question.clickNextButton();
-		};
-
-		controls.appendChild(nextBtn);
-		container.appendChild(controls);
-	}
-
-	renderStep();
-});
-
-Qualtrics.SurveyEngine.addOnUnload(function()
-{
-	/* Optional: code to run when the page is unloaded */
-
-});`;
 }
