@@ -16,7 +16,12 @@
  *   --categories "A, B"  expected category labels, in order
  *   --mode paint|dropdown|dragdrop
  *   --experimental yes|no
- *   --fields "A, B"      expected embedded-data fields declared in the Survey Flow
+ *   --fields "A, B"      expected embedded-data fields declared in the Survey Flow,
+ *                        as Qualtrics records them, e.g. __js_GridAssignments
+ *
+ * The grid script saves its answers with setJSEmbeddedData, which Qualtrics
+ * records as "__js_" and the field's name, so the Survey Flow must declare
+ * every field a script saves under that name.
  *
  * Exit code 0 = every check passed (warnings allowed), 1 = at least one failure,
  * 2 = usage error. No dependencies; Node 22 or newer.
@@ -42,6 +47,8 @@ const info = (msg) => results.push(["INFO", msg]);
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const csv = (s) => String(s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** The name Qualtrics records a field under when a script saves it with setJSEmbeddedData. */
+const recorded = (field) => `__js_${field}`;
 
 function report() {
   const counts = { PASS: 0, FAIL: 0, WARN: 0, INFO: 0 };
@@ -78,17 +85,9 @@ function extractLiteral(src, start) {
 }
 
 function configFromScript(js) {
-  const single = js.indexOf("var cfg = ");
-  if (single >= 0) {
-    const lit = extractLiteral(js, js.indexOf("{", single));
-    return { kind: "single", configs: [JSON.parse(lit)] };
-  }
-  const multi = js.indexOf("var steps = ");
-  if (multi >= 0) {
-    const lit = extractLiteral(js, js.indexOf("[", multi));
-    return { kind: "steps", configs: JSON.parse(lit) };
-  }
-  throw new Error("no `var cfg = {...}` or `var steps = [...]` found");
+  const start = js.indexOf("var cfg = ");
+  if (start < 0) throw new Error("no `var cfg = {...}` found");
+  return JSON.parse(extractLiteral(js, js.indexOf("{", start)));
 }
 
 // ---------------------------------------------------------------- 1. parse
@@ -168,6 +167,7 @@ if (flag("fields") !== undefined) {
 
 // --------------------------------------------------------- 5. each question
 const usedFields = [];
+const legacyFields = [];
 const summaries = [];
 questions.forEach((q, index) => {
   const n = index + 1;
@@ -196,80 +196,85 @@ questions.forEach((q, index) => {
     fail(`${label}: JavaScript does not parse: ${e.message}`);
   }
 
-  let parsed;
+  let cfg;
   try {
-    parsed = configFromScript(js);
+    cfg = configFromScript(js);
   } catch (e) {
     fail(`${label}: cannot read the embedded grid config: ${e.message}`);
     return;
   }
 
-  // Which embedded-data fields will this script actually write? The single-grid
-  // script keeps both branches of persistAll() (experimental and standard), so
-  // read the field names from the branch the config enables. Multi-step scripts
-  // write each step's own embeddedDataField.
-  const literals = (s) => [...s.matchAll(/setEmbeddedData\((\"(?:[^"\\]|\\.)*\")/g)].map((m) => JSON.parse(m[1]));
-  if (parsed.kind === "single") {
-    const start = js.indexOf("function persistAll()");
-    const fn = start >= 0 ? js.slice(start, js.indexOf("\n\t}", start) + 3) : "";
-    // Branches: experimental, then standard; a look-only grid writes nothing.
-    const [experimentalBranch, standardBranch = ""] = fn.split("} else");
-    const first = parsed.configs[0] ?? {};
-    const lookOnly =
-      !first.experimental?.enabled && !(first.survey?.allowInteraction && csv(first.survey?.categoriesCsv).length > 0);
-    const live = first.experimental?.enabled ? literals(experimentalBranch) : lookOnly ? [] : literals(standardBranch);
-    if (lookOnly) console.log(`      ${label}: look-only grid, records nothing`);
-    else if (live.length === 0) fail(`${label}: could not find the setEmbeddedData call that saves the answers`);
-    for (const field of live) usedFields.push({ q: n, field });
-  } else {
-    for (const step of parsed.configs) if (step.embeddedDataField) usedFields.push({ q: n, field: step.embeddedDataField });
+  // Which embedded-data fields will this script save? The script keeps both
+  // branches of persistAll() (experimental and standard), so read the field
+  // names from the branch the config enables. saveField() saves each one with
+  // setJSEmbeddedData. Scripts from older GRIDDY versions called
+  // setEmbeddedData instead, which records nothing in Qualtrics' new
+  // survey-taking experience.
+  const literals = (s, pattern) => [...s.matchAll(pattern)].map((m) => JSON.parse(m[1]));
+  const start = js.indexOf("function persistAll()");
+  const fn = start >= 0 ? js.slice(start, js.indexOf("\n\t}", start) + 3) : "";
+  // Branches: experimental, then standard; a look-only grid saves nothing.
+  const [experimentalBranch, standardBranch = ""] = fn.split("} else");
+  const branch = cfg.experimental?.enabled ? experimentalBranch : standardBranch;
+  const lookOnly =
+    !cfg.experimental?.enabled && !(cfg.survey?.allowInteraction && csv(cfg.survey?.categoriesCsv).length > 0);
+  const live = lookOnly ? [] : literals(branch, /saveField\(("(?:[^"\\]|\\.)*")/g);
+  const legacy = lookOnly ? [] : literals(branch, /setEmbeddedData\(("(?:[^"\\]|\\.)*")/g);
+  if (lookOnly) console.log(`      ${label}: look-only grid, records nothing`);
+  else if (live.length > 0 && /\.setJSEmbeddedData\(/.test(js)) pass(`${label}: saves ${live.join(", ")} with setJSEmbeddedData`);
+  else if (live.length > 0) fail(`${label}: saves ${live.join(", ")} without setJSEmbeddedData, so Qualtrics' new survey-taking experience records nothing`);
+  else if (legacy.length > 0) fail(`${label}: made by an older GRIDDY, which saves ${legacy.join(", ")} with setEmbeddedData; Qualtrics' new survey-taking experience records nothing from it, so export the survey again`);
+  else fail(`${label}: could not find the saveField call that saves the answers`);
+  for (const field of live) usedFields.push({ q: n, field });
+  legacyFields.push(...legacy);
+
+  const layout = cfg.layout ?? {};
+  const survey = cfg.survey ?? {};
+  const exp = cfg.experimental ?? null;
+  const cats = csv(survey.categoriesCsv);
+  const blocked = Object.keys(layout.blockedCells ?? {}).length;
+  const dataUrls = [layout.backgroundImageUrl, ...Object.values(survey.categoryMeta ?? {}).map((m) => m?.imageUrl), ...Object.values(layout.barrierMeta ?? {}).map((m) => m?.imageUrl), ...Object.values(exp?.responseLabelMeta ?? {}).map((m) => m?.imageUrl)].filter((u) => typeof u === "string" && u.startsWith("data:"));
+  const summary = [
+    `${layout.rows}x${layout.cols}`,
+    layout.includeCenterCell ? `centre "${layout.centerCellLabel}"` : "no centre cell",
+    `categories [${cats.join(", ")}]`,
+    `${survey.selectionMode}${survey.allowInteraction ? "" : " (interaction off)"}`,
+    exp?.enabled ? `experimental ${exp.prefillMode}, labels [${csv(exp.responseLabelsCsv).join(", ")}]` : "standard",
+    blocked ? `${blocked} blocked cell(s)` : "no barriers",
+    dataUrls.length ? `${dataUrls.length} embedded image(s), ${kb(dataUrls.reduce((s, u) => s + u.length, 0))}` : "no embedded images",
+  ].join("; ");
+  info(`${label}: ${summary}`);
+  if (argv.includes("--dump")) {
+    const dump = {
+      blockedCells: layout.blockedCells ?? {},
+      barriersCsv: layout.barriersCsv ?? "",
+      centerRow: layout.centerRow ?? null,
+      centerCol: layout.centerCol ?? null,
+      experimental: exp?.enabled
+        ? { prefillMode: exp.prefillMode, fixedAssignments: exp.fixedAssignments, weightedEntries: exp.weightedEntries, responseLabelsCsv: exp.responseLabelsCsv }
+        : null,
+    };
+    info(`${label}: config ${JSON.stringify(dump)}`);
   }
-  parsed.configs.forEach((cfg, stepIndex) => {
-    const layout = cfg.layout ?? {};
-    const survey = cfg.survey ?? {};
-    const exp = cfg.experimental ?? null;
-    const cats = csv(survey.categoriesCsv);
-    const blocked = Object.keys(layout.blockedCells ?? {}).length;
-    const stepLabel = parsed.kind === "steps" ? `${label} step ${stepIndex + 1}` : label;
-    const dataUrls = [layout.backgroundImageUrl, ...Object.values(survey.categoryMeta ?? {}).map((m) => m?.imageUrl), ...Object.values(layout.barrierMeta ?? {}).map((m) => m?.imageUrl), ...Object.values(exp?.responseLabelMeta ?? {}).map((m) => m?.imageUrl)].filter((u) => typeof u === "string" && u.startsWith("data:"));
-    const summary = [
-      `${layout.rows}x${layout.cols}`,
-      layout.includeCenterCell ? `centre "${layout.centerCellLabel}"` : "no centre cell",
-      `categories [${cats.join(", ")}]`,
-      `${survey.selectionMode}${survey.allowInteraction ? "" : " (interaction off)"}`,
-      exp?.enabled ? `experimental ${exp.prefillMode}, labels [${csv(exp.responseLabelsCsv).join(", ")}]` : "standard",
-      blocked ? `${blocked} blocked cell(s)` : "no barriers",
-      dataUrls.length ? `${dataUrls.length} embedded image(s), ${kb(dataUrls.reduce((s, u) => s + u.length, 0))}` : "no embedded images",
-    ].join("; ");
-    info(`${stepLabel}: ${summary}`);
-    if (argv.includes("--dump")) {
-      const dump = {
-        blockedCells: layout.blockedCells ?? {},
-        barriersCsv: layout.barriersCsv ?? "",
-        centerRow: layout.centerRow ?? null,
-        centerCol: layout.centerCol ?? null,
-        experimental: exp?.enabled
-          ? { prefillMode: exp.prefillMode, fixedAssignments: exp.fixedAssignments, weightedEntries: exp.weightedEntries, responseLabelsCsv: exp.responseLabelsCsv }
-          : null,
-      };
-      info(`${stepLabel}: config ${JSON.stringify(dump)}`);
-    }
-    summaries.push({ q: n, layout, survey, exp, cats });
-  });
+  summaries.push({ q: n, layout, survey, exp, cats });
 });
 
-// ------------------------------------------- 6. fields used versus declared
+// -------------------------------------------- 6. fields saved versus declared
 const used = [...new Set(usedFields.map((u) => u.field))];
-const undeclared = used.filter((f) => !declaredFields.includes(f));
-if (undeclared.length === 0) pass(`every field the scripts write is declared: ${used.join(", ") || "(none)"}`);
-else fail(`scripts write undeclared fields (answers would be lost): ${undeclared.join(", ")}`);
-const unused = declaredFields.filter((f) => !used.includes(f));
-if (unused.length > 0 && questions.every((q) => !String(q.Payload?.QuestionJS).includes("var steps = "))) warn(`declared but never written: ${unused.join(", ")}`);
+const undeclared = used.filter((f) => !declaredFields.includes(recorded(f)));
+if (undeclared.length === 0) pass(`every field the scripts save is declared under its __js_ name: ${used.map(recorded).join(", ") || "(none)"}`);
+else {
+  const plain = undeclared.filter((f) => declaredFields.includes(f));
+  const hint = plain.length > 0 ? ` (it declares ${plain.join(", ")}, which only the older survey layouts record)` : "";
+  fail(`the Survey Flow does not declare ${undeclared.map(recorded).join(", ")}, so those answers would be lost${hint}`);
+}
+const unused = declaredFields.filter((f) => !used.includes(f) && !used.map(recorded).includes(f) && !legacyFields.includes(f));
+if (unused.length > 0) warn(`declared but never saved: ${unused.join(", ")}`);
 const fieldOwners = {};
 for (const { q, field } of usedFields) (fieldOwners[field] ??= new Set()).add(q);
-const shared = Object.entries(fieldOwners).filter(([, qs]) => qs.size > 1).map(([f]) => f);
-if (shared.length === 0) pass("no field is written by more than one question");
-else fail(`fields written by several questions (later grids overwrite earlier answers): ${shared.join(", ")}`);
+const shared = Object.entries(fieldOwners).filter(([, qs]) => qs.size > 1).map(([f]) => recorded(f));
+if (shared.length === 0) pass("no field is saved by more than one question");
+else fail(`fields saved by several questions (later grids overwrite earlier answers): ${shared.join(", ")}`);
 
 // --------------------------------------------- 7. expectations for one grid
 const target = summaries.find((s) => s.q === Number(flag("q") ?? 1));

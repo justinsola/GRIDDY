@@ -6,7 +6,8 @@ import type { GridConfig } from "../grid-types";
  * What respondents experience in Qualtrics: the frame that keeps the designed
  * grid size, the empty-cell check on Next, and what reaches embedded data.
  * Each test runs the exported script in jsdom against a stub of the Qualtrics
- * engine that records what the script does.
+ * engine that records what the script does: by default the new survey-taking
+ * experience, which records each field as "__js_" and its name.
  */
 
 function makeConfig(overrides: Partial<GridConfig> = {}): GridConfig {
@@ -71,16 +72,66 @@ function experimental(
 
 /** One Qualtrics page: what its grids record, and its own Next button. */
 interface Page {
+  /** Embedded data saved on this page, under the names Qualtrics records. */
   embedded: Record<string, string>;
   /** Embedded data recorded on earlier pages. */
   saved: Record<string, string>;
   nextClicks: number;
   nativeNextHidden: boolean;
   unloads: Array<() => void>;
+  /** Calls to functions that only say they are deprecated. */
+  deprecatedCalls: string[];
 }
 
 function newPage(saved: Record<string, string> = {}): Page {
-  return { embedded: {}, saved, nextClicks: 0, nativeNextHidden: false, unloads: [] };
+  return { embedded: {}, saved, nextClicks: 0, nativeNextHidden: false, unloads: [], deprecatedCalls: [] };
+}
+
+/**
+ * The kinds of Qualtrics page the script can meet:
+ * - "new": the new survey-taking experience, the default for surveys created
+ *   since June 2026. setEmbeddedData and getEmbeddedData are stubs that only
+ *   say they are deprecated; setJSEmbeddedData and getJSEmbeddedData keep the
+ *   field under "__js_" and its name.
+ * - "older": the older layouts, where setJSEmbeddedData is setEmbeddedData
+ *   with "__js_" in front of the name.
+ * - "plain": a page with setEmbeddedData and getEmbeddedData only.
+ * - "failing": every embedded-data call throws.
+ */
+type Engine = "new" | "older" | "plain" | "failing";
+
+function embeddedDataFunctions(engine: Engine, page: Page): Record<string, unknown> {
+  const read = (field: string) => page.embedded[field] ?? page.saved[field] ?? "";
+  const write = (field: string, value: string) => {
+    page.embedded[field] = value;
+  };
+  // Qualtrics' own stub is a console.error that names the function as deprecated.
+  const deprecated = (name: string) => () => {
+    page.deprecatedCalls.push(name + " deprecated, please use setJSEmbeddedData");
+  };
+  const fail = () => {
+    throw new Error("Qualtrics could not save");
+  };
+  switch (engine) {
+    case "new":
+      return {
+        setEmbeddedData: deprecated("setEmbeddedData"),
+        getEmbeddedData: deprecated("getEmbeddedData"),
+        setJSEmbeddedData: (key: string, value: string) => write(`__js_${key}`, value),
+        getJSEmbeddedData: (key: string) => read(`__js_${key}`),
+      };
+    case "older":
+      return {
+        setEmbeddedData: write,
+        getEmbeddedData: read,
+        setJSEmbeddedData: (key: string, value: string) => write(`__js_${key}`, value),
+        getJSEmbeddedData: (key: string) => read(`__js_${key}`),
+      };
+    case "plain":
+      return { setEmbeddedData: write, getEmbeddedData: read };
+    case "failing":
+      return { setEmbeddedData: fail, getEmbeddedData: fail, setJSEmbeddedData: fail, getJSEmbeddedData: fail };
+  }
 }
 
 interface Run {
@@ -98,6 +149,8 @@ interface RunOptions {
   /** Where the question sits, for example a block hidden by display logic. */
   parent?: HTMLElement;
   fields?: QualtricsExportOptions;
+  /** The new survey-taking experience unless a test says otherwise. */
+  engine?: Engine;
 }
 
 function run(
@@ -114,10 +167,7 @@ function run(
       addOnload: () => {},
       addOnReady: (cb: () => void) => readyCallbacks.push(cb),
       addOnUnload: (cb: () => void) => page.unloads.push(cb),
-      setEmbeddedData: (field: string, value: string) => {
-        page.embedded[field] = value;
-      },
-      getEmbeddedData: (field: string) => page.embedded[field] ?? page.saved[field] ?? "",
+      ...embeddedDataFunctions(options.engine ?? "new", page),
     },
   };
   container.innerHTML = questionHtml;
@@ -336,18 +386,18 @@ describe("empty cells when the respondent presses Next", () => {
 
 describe("what is recorded", () => {
   it("records an empty answer as soon as the grid is shown", () => {
-    expect(run(makeConfig()).embedded.GridAssignments).toBe("{}");
+    expect(run(makeConfig()).embedded.__js_GridAssignments).toBe("{}");
   });
 
   it("records the pre-fills a respondent was shown before any reaction", () => {
     const r = run(experimental());
-    expect(JSON.parse(r.embedded.GridPrefills)).toEqual({ "r1-c1": "Family" });
-    expect(r.embedded.GridResponses).toBe("{}");
+    expect(JSON.parse(r.embedded.__js_GridPrefills)).toEqual({ "r1-c1": "Family" });
+    expect(r.embedded.__js_GridResponses).toBe("{}");
   });
 
   it("never shuffles a pre-fill into the centre cell or outside the grid", () => {
     const r = run(experimental({ prefillMode: "shuffle" }));
-    expect(Object.keys(JSON.parse(r.embedded.GridPrefills))).toEqual(["r1-c1"]);
+    expect(Object.keys(JSON.parse(r.embedded.__js_GridPrefills))).toEqual(["r1-c1"]);
   });
 });
 
@@ -356,9 +406,9 @@ describe("reactions in an experiment", () => {
     const r = run(experimental());
     const grid = cells(r.container);
     grid[1].click(); // r1-c2 has no pre-fill
-    expect(JSON.parse(r.embedded.GridResponses)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridResponses)).toEqual({});
     grid[0].click(); // r1-c1 shows Family
-    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c1": "Agree" });
+    expect(JSON.parse(r.embedded.__js_GridResponses)).toEqual({ "r1-c1": "Agree" });
   });
 
   it("offers the reaction dropdown only on pre-filled cells", () => {
@@ -388,7 +438,7 @@ describe("dropdown cells", () => {
     const img = cells(r.container)[0].querySelector("img");
     expect(img).not.toBeNull();
     expect(img!.alt).toBe("Family");
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
   });
 });
 
@@ -445,9 +495,9 @@ describe("drag and drop", () => {
         dataTransfer: { getData: () => text },
       } as unknown as DragEvent);
     drop("Not a label");
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({});
     drop("Friends");
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Friends" });
   });
 });
 
@@ -478,22 +528,22 @@ describe("drag and drop on touch screens", () => {
   it("drops a label on the cell where the finger lifts", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));
     fingerDrag(button(r.container, "Friends"), cells(r.container)[0]);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Friends" });
     expect(ghosts()).toHaveLength(0);
   });
 
   it("drops a reaction only on a pre-filled cell", () => {
     const r = run(experimental({}, withSurvey({ selectionMode: "dragdrop" })));
     fingerDrag(button(r.container, "Agree"), cells(r.container)[1]); // no pre-fill
-    expect(JSON.parse(r.embedded.GridResponses)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridResponses)).toEqual({});
     fingerDrag(button(r.container, "Agree"), cells(r.container)[0]); // shows Family
-    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c1": "Agree" });
+    expect(JSON.parse(r.embedded.__js_GridResponses)).toEqual({ "r1-c1": "Agree" });
   });
 
   it("leaves mouse drags to the browser's own drag and drop", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));
     fingerDrag(button(r.container, "Friends"), cells(r.container)[0], "mouse");
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({});
   });
 });
 
@@ -513,7 +563,7 @@ describe("keyboard and screen readers", () => {
     const r = run(makeConfig());
     const first = cells(r.container)[0];
     press(first);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
     expect(first.getAttribute("aria-label")).toBe("Row 1, column 1: Family");
   });
 
@@ -528,14 +578,14 @@ describe("keyboard and screen readers", () => {
     assistiveClick(chip);
     expect(chip.getAttribute("aria-pressed")).toBe("true");
     press(cells(r.container)[2]);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c3": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c3": "Friends" });
   });
 
   it("lets a screen reader pick up and place a label with clicks alone", () => {
     const r = run(withSurvey({ selectionMode: "dragdrop" }));
     assistiveClick(button(r.container, "Family"));
     assistiveClick(cells(r.container)[1]);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c2": "Family" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c2": "Family" });
   });
 
   it("leaves mouse clicks alone, so drag and drop stays a drag", () => {
@@ -545,7 +595,7 @@ describe("keyboard and screen readers", () => {
     expect(chip.getAttribute("aria-pressed")).toBe("false");
     assistiveClick(chip);
     mouseClick(cells(r.container)[1]);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({});
   });
 
   it("leaves Enter on a cell's clear button to that button", () => {
@@ -557,9 +607,9 @@ describe("keyboard and screen readers", () => {
     const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
     clear.dispatchEvent(enter);
     expect(enter.defaultPrevented).toBe(false);
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Friends" });
     clear.click();
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({});
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({});
   });
 
   it("names every dropdown", () => {
@@ -627,27 +677,27 @@ describe("image URLs", () => {
 
 describe("going back to the grid, or resuming later", () => {
   it("shows the answers already recorded instead of an empty grid", () => {
-    const r = run(makeConfig(), { GridAssignments: '{"r1-c1":"Friends","r9-c9":"Friends","r1-c2":"Strangers"}' });
+    const r = run(makeConfig(), { __js_GridAssignments: '{"r1-c1":"Friends","r9-c9":"Friends","r1-c2":"Strangers"}' });
     expect(cells(r.container)[0].textContent).toContain("Friends");
     // Only real cells and real categories come back; nothing is lost on display.
-    expect(JSON.parse(r.embedded.GridAssignments)).toEqual({ "r1-c1": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Friends" });
   });
 
   it("does not show or overwrite answers another question saved under the same field", () => {
     const page = newPage();
     const first = run(makeConfig(), {}, "", { page, questionId: "QID1" });
     cells(first.container)[0].click();
-    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(JSON.parse(page.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
     first.container.remove();
     // A copy of the grid on the next page, under another question.
     const copy = run(makeConfig(), {}, "", { page, questionId: "QID2" });
     expect(cells(copy.container)[0].textContent).not.toContain("Family");
-    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(JSON.parse(page.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
     // Leaving the copy untouched keeps the first question's answers.
     button(copy.container, "Next").click();
     button(copy.container, "Continue anyway").click();
     expect(page.nextClicks).toBe(1);
-    expect(JSON.parse(page.embedded.GridAssignments)).toEqual({ "r1-c1": "Family" });
+    expect(JSON.parse(page.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
     copy.container.remove();
     // Going back to the first question shows its answers again.
     const back = run(makeConfig(), {}, "", { page, questionId: "QID1" });
@@ -655,35 +705,145 @@ describe("going back to the grid, or resuming later", () => {
   });
 
   it("draws fresh pre-fills when the saved ones do not fit this grid", () => {
-    const r = run(experimental(), { GridPrefills: '{"r1-c1":"Strangers"}' });
-    expect(JSON.parse(r.embedded.GridPrefills)).toEqual({ "r1-c1": "Family" });
+    const r = run(experimental(), { __js_GridPrefills: '{"r1-c1":"Strangers"}' });
+    expect(JSON.parse(r.embedded.__js_GridPrefills)).toEqual({ "r1-c1": "Family" });
   });
 
   it("shows the same pre-fills and reactions rather than drawing new ones", () => {
     const r = run(experimental({ prefillMode: "shuffle" }), {
-      GridPrefills: '{"r1-c3":"Friends"}',
-      GridResponses: '{"r1-c3":"Disagree"}',
+      __js_GridPrefills: '{"r1-c3":"Friends"}',
+      __js_GridResponses: '{"r1-c3":"Disagree"}',
     });
-    expect(JSON.parse(r.embedded.GridPrefills)).toEqual({ "r1-c3": "Friends" });
-    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c3": "Disagree" });
+    expect(JSON.parse(r.embedded.__js_GridPrefills)).toEqual({ "r1-c3": "Friends" });
+    expect(JSON.parse(r.embedded.__js_GridResponses)).toEqual({ "r1-c3": "Disagree" });
+  });
+});
+
+describe("saving in each kind of Qualtrics page", () => {
+  it("records answers under the __js_ names in the new survey-taking experience", () => {
+    const r = run(makeConfig());
+    cells(r.container)[0].click();
+    expect(Object.keys(r.embedded)).toEqual(["__js_GridAssignments"]);
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Family" });
+    // Qualtrics' deprecated stubs are left alone, so nothing is logged.
+    expect(r.page.deprecatedCalls).toEqual([]);
+  });
+
+  it("shows the answers again on Back, read with getJSEmbeddedData, and Next moves on", () => {
+    const first = run(makeConfig());
+    cells(first.container)[0].click();
+    button(first.container, "Next").click();
+    button(first.container, "Continue anyway").click();
+    expect(first.nextClicks).toBe(1);
+    first.container.remove();
+    const back = run(makeConfig(), { ...first.embedded });
+    expect(cells(back.container)[0].textContent).toContain("Family");
+    expect(back.page.deprecatedCalls).toEqual([]);
+  });
+
+  it("records the plain name as well in the older layouts", () => {
+    const r = run(makeConfig(), {}, "", { engine: "older" });
+    cells(r.container)[0].click();
+    expect(Object.keys(r.embedded).sort()).toEqual(["GridAssignments", "__js_GridAssignments"]);
+    expect(r.embedded.GridAssignments).toBe(r.embedded.__js_GridAssignments);
+  });
+
+  it("brings back answers an older GRIDDY script saved under the plain name", () => {
+    const r = run(makeConfig(), { GridAssignments: '{"r1-c1":"Friends"}' }, "", { engine: "older" });
+    expect(cells(r.container)[0].textContent).toContain("Friends");
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c1": "Friends" });
+  });
+
+  it("saves and reads the plain name where Qualtrics has no setJSEmbeddedData", () => {
+    const r = run(experimental(), { GridResponses: '{"r1-c1":"Disagree"}', GridPrefills: '{"r1-c1":"Family"}' }, "", {
+      engine: "plain",
+    });
+    expect(Object.keys(r.embedded).sort()).toEqual(["GridPrefills", "GridResponses"]);
+    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c1": "Disagree" });
+    cells(r.container)[0].click();
+    expect(JSON.parse(r.embedded.GridResponses)).toEqual({ "r1-c1": "Agree" });
+  });
+
+  it("keeps the grid, its reminder and Next working when saving fails", () => {
+    const r = run(makeConfig(), {}, "", { engine: "failing" });
+    cells(r.container)[0].click();
+    expect(cells(r.container)[0].textContent).toContain("Family");
+    button(r.container, "Next").click();
+    expect(reminder(r.container).textContent).toContain("7 cells are still empty");
+    cells(r.container)[1].click();
+    expect(reminder(r.container).textContent).toContain("6 cells are still empty");
+    button(r.container, "Continue anyway").click();
+    expect(r.nextClicks).toBe(1);
+    expect(r.embedded).toEqual({});
+  });
+
+  it("lets an experiment be answered and moves on when saving fails", () => {
+    const r = run(experimental(), {}, "", { engine: "failing" });
+    cells(r.container)[0].click();
+    expect(cells(r.container)[0].textContent).toContain("Agree");
+    button(r.container, "Next").click();
+    expect(r.nextClicks).toBe(1);
+  });
+
+  it("moves on even when another grid on the page cannot save", () => {
+    const r = run(makeConfig());
+    cells(r.container).forEach((cell) => cell.click());
+    // A grid from an older GRIDDY script on the same page, whose save throws.
+    const other = document.createElement("div");
+    document.body.appendChild(other);
+    (window as unknown as { griddyPageGrids: unknown[] }).griddyPageGrids.push({
+      root: other,
+      question: {},
+      controls: document.createElement("div"),
+      reminder: document.createElement("div"),
+      isShown: () => true,
+      persist: () => {
+        throw new Error("Qualtrics could not save");
+      },
+      showReminder: () => {},
+      checks: () => false,
+      blocks: () => false,
+    });
+    button(r.container, "Next").click();
+    expect(r.nextClicks).toBe(1);
   });
 });
 
 describe("question wording", () => {
-  it("keeps the wording written in Qualtrics when GRIDDY's question is blank", () => {
+  const withQuestion = (questionText: string): GridConfig => {
     const base = makeConfig();
-    const r = run({ ...base, layout: { ...base.layout, questionText: "" } }, {}, "<b>Where do your relatives live?</b>");
+    return { ...base, layout: { ...base.layout, questionText } };
+  };
+
+  it("keeps the wording written in Qualtrics when GRIDDY's question is blank", () => {
+    const r = run(withQuestion(""), {}, "<b>Where do your relatives live?</b>");
     expect(r.container.innerHTML).toContain("<b>Where do your relatives live?</b>");
   });
 
+  it("treats a question of only spaces, non-breaking spaces or line breaks as blank", () => {
+    for (const questionText of ["   ", "\u00a0\u00a0", "\n", " \u00a0\r\n\t "]) {
+      document.body.innerHTML = "";
+      const r = run(withQuestion(questionText), {}, "<b>Where do your relatives live?</b>");
+      expect(r.container.innerHTML).toContain("<b>Where do your relatives live?</b>");
+    }
+  });
+
+  it("shows GRIDDY's question, spaces and all, when it has visible text", () => {
+    const r = run(withQuestion("  Who lives where?  "), {}, "<b>Where do your relatives live?</b>");
+    expect(r.container.innerHTML).not.toContain("Where do your relatives live?");
+    const question = r.container.querySelector("p")!;
+    expect(question.textContent).toBe("  Who lives where?  ");
+  });
+
   it("escapes the question in the .qsf and leaves it blank when GRIDDY's is blank", () => {
-    const base = makeConfig();
     const qsf = (questionText: string) =>
-      JSON.parse(buildQualtricsQsf([{ title: "Study A", config: { ...base, layout: { ...base.layout, questionText } } }]))
+      JSON.parse(buildQualtricsQsf([{ title: "Study A", config: withQuestion(questionText) }]))
         .SurveyElements.find((e: { Element: string }) => e.Element === "SQ").Payload;
     expect(qsf("Rate A < B & C").QuestionText).toBe("Rate A &lt; B &amp; C");
     expect(qsf("").QuestionText).toBe("");
     expect(qsf("").QuestionDescription).toBe("Study A");
+    expect(qsf(" \u00a0\n ").QuestionText).toBe("");
+    expect(qsf(" \u00a0\n ").QuestionDescription).toBe("Study A");
   });
 });
 
@@ -754,7 +914,7 @@ describe("display logic and several grids on one page", () => {
     block.style.display = "block";
     layoutChanged();
     expect(r.nativeNextHidden).toBe(true);
-    expect(r.embedded.GridAssignments).toBe("{}");
+    expect(r.embedded.__js_GridAssignments).toBe("{}");
 
     block.style.display = "none";
     layoutChanged();
@@ -780,8 +940,8 @@ describe("display logic and several grids on one page", () => {
     cells(first.container).forEach((cell) => cell.click());
     gridNext(second.container).button.click();
     expect(page.nextClicks).toBe(1);
-    expect(Object.keys(JSON.parse(page.embedded.GridAssignments))).toHaveLength(8);
-    expect(Object.keys(JSON.parse(page.embedded.GridAssignments_B))).toHaveLength(8);
+    expect(Object.keys(JSON.parse(page.embedded.__js_GridAssignments))).toHaveLength(8);
+    expect(Object.keys(JSON.parse(page.embedded.__js_GridAssignments_B))).toHaveLength(8);
   });
 });
 

@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   EXPORT_LICENSE_HEADER,
+  JS_FIELD_PREFIX,
   sanitizeEmbeddedDataField,
   buildQualtricsSnippet,
-  buildQualtricsMultiQuestionSnippet,
   buildQualtricsQsf,
   buildQualtricsQsfForConfig,
   qsfEmbeddedFields,
   QualtricsQsfItem,
+  recordedFieldName,
   singleGridFieldNames,
 } from "./qualtricsExport";
 import { GridConfig } from "../grid-types";
@@ -72,6 +73,54 @@ function makeConfig(overrides: Partial<GridConfig> = {}): GridConfig {
     },
     ...overrides,
   };
+}
+
+/** The embedded-data fields a .qsf declares in its Survey Flow. */
+function declaredFields(qsf: string): string[] {
+  const flow = JSON.parse(qsf).SurveyElements.find((e: { Element: string }) => e.Element === "FL");
+  const ed = flow.Payload.Flow.find((f: { Type: string }) => f.Type === "EmbeddedData");
+  return ed.EmbeddedData.map((d: { Field: string }) => d.Field);
+}
+
+/**
+ * The fields Qualtrics' new survey-taking experience records when each
+ * question of a .qsf is shown. Each script runs in jsdom against a stub of
+ * that engine: setEmbeddedData only says it is deprecated, and
+ * setJSEmbeddedData records the field as "__js_" and its name.
+ */
+function recordedOnDisplay(qsf: string): string[] {
+  const w = window as unknown as Record<string, unknown>;
+  delete w.griddyPageGrids;
+  delete w.griddyFieldOwners;
+  delete w.griddyHidNext;
+  delete w.griddyNextOwner;
+  const recorded: Record<string, string> = {};
+  const questions = JSON.parse(qsf).SurveyElements.filter((e: { Element: string }) => e.Element === "SQ");
+  for (const q of questions) {
+    const readyCbs: Array<() => void> = [];
+    (globalThis as unknown as { Qualtrics: unknown }).Qualtrics = {
+      SurveyEngine: {
+        addOnload: () => {},
+        addOnReady: (cb: () => void) => readyCbs.push(cb),
+        addOnUnload: () => {},
+        setEmbeddedData: () => "setEmbeddedData deprecated, please use setJSEmbeddedData",
+        setJSEmbeddedData: (key: string, value: string) => {
+          recorded[`__js_${key}`] = value;
+        },
+      },
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    new Function(q.Payload.QuestionJS)();
+    const question = {
+      questionId: q.Payload.QuestionID,
+      getQuestionTextContainer: () => container,
+      clickNextButton: () => {},
+    };
+    readyCbs.forEach((cb) => cb.call(question));
+    container.remove();
+  }
+  return Object.keys(recorded);
 }
 
 describe("sanitizeEmbeddedDataField", () => {
@@ -223,7 +272,7 @@ describe("buildQualtricsQsf", () => {
       (f: { Type: string }) => f.Type === "EmbeddedData",
     );
     const fields = edElement.EmbeddedData.map((d: { Field: string }) => d.Field);
-    expect(fields).toContain("GridAssignments");
+    expect(fields).toEqual(["__js_GridAssignments"]);
   });
 
   it("creates one block and question per item for bundles, with unique fields", () => {
@@ -256,7 +305,7 @@ describe("buildQualtricsQsf", () => {
       (f: { Type: string }) => f.Type === "EmbeddedData",
     );
     const fields = edElement.EmbeddedData.map((d: { Field: string }) => d.Field);
-    expect(fields).toEqual(["GridAssignments_A", "GridAssignments_B"]);
+    expect(fields).toEqual(["__js_GridAssignments_A", "__js_GridAssignments_B"]);
   });
 
   it("uses parameterized prefill/response fields in experimental snippets", () => {
@@ -280,8 +329,75 @@ describe("buildQualtricsQsf", () => {
     const q = qsf.SurveyElements.find(
       (e: { Element: string }) => e.Element === "SQ",
     );
-    expect(q.Payload.QuestionJS).toContain('setEmbeddedData("MyPrefills"');
-    expect(q.Payload.QuestionJS).toContain('setEmbeddedData("MyResponses"');
+    expect(q.Payload.QuestionJS).toContain('saveField("MyPrefills"');
+    expect(q.Payload.QuestionJS).toContain('saveField("MyResponses"');
+    expect(declaredFields(buildQualtricsQsf([item], "Exp"))).toEqual(["__js_MyPrefills", "__js_MyResponses"]);
+  });
+});
+
+describe("fields for Qualtrics' new survey-taking experience", () => {
+  it("names a field's recorded column with the __js_ prefix", () => {
+    expect(JS_FIELD_PREFIX).toBe("__js_");
+    expect(recordedFieldName("GridAssignments_Q2")).toBe("__js_GridAssignments_Q2");
+  });
+
+  it("declares the __js_ name of the field a plain grid records", () => {
+    const qsf = buildQualtricsQsfForConfig(makeConfig());
+    expect(declaredFields(qsf)).toEqual(["__js_GridAssignments"]);
+    expect(recordedOnDisplay(qsf)).toEqual(["__js_GridAssignments"]);
+  });
+
+  it("declares the __js_ names of both fields an experiment records", () => {
+    const qsf = buildQualtricsQsfForConfig(makeExperimentalConfig("paint"));
+    expect(declaredFields(qsf)).toEqual(["__js_GridPrefills", "__js_GridResponses"]);
+    expect(recordedOnDisplay(qsf).sort()).toEqual(["__js_GridPrefills", "__js_GridResponses"]);
+  });
+
+  it("declares the __js_ names on the multi-question .qsf", () => {
+    const qsf = buildQualtricsQsf(
+      [
+        { title: "Map", config: makeConfig(), embeddedDataField: "GridAssignments_Map" },
+        {
+          title: "Reactions",
+          config: makeExperimentalConfig("dragdrop"),
+          prefillsField: "GridPrefills_Reactions",
+          responsesField: "GridResponses_Reactions",
+        },
+      ],
+      "Bundle",
+    );
+    expect(declaredFields(qsf)).toEqual([
+      "__js_GridAssignments_Map",
+      "__js_GridPrefills_Reactions",
+      "__js_GridResponses_Reactions",
+    ]);
+    expect(recordedOnDisplay(qsf).sort()).toEqual([...declaredFields(qsf)].sort());
+  });
+});
+
+describe("question text made only of whitespace", () => {
+  const withQuestion = (questionText: string): GridConfig =>
+    makeConfig({ layout: { ...makeConfig().layout, questionText } });
+  const question = (qsf: string) =>
+    JSON.parse(qsf).SurveyElements.find((e: { Element: string }) => e.Element === "SQ");
+
+  it("counts as blank in the .qsf and in the script", () => {
+    for (const blank of ["   ", "\u00a0", "\n\n", " \u00a0\r\n\t "]) {
+      const q = question(buildQualtricsQsf([{ title: "Study A", config: withQuestion(blank) }]));
+      expect(q.Payload.QuestionText).toBe("");
+      expect(q.Payload.QuestionDescription).toBe("Study A");
+      expect(q.SecondaryAttribute).toBe("Study A");
+      expect(q.Payload.QuestionJS).toContain('"questionText": ""');
+      expect(buildQualtricsSnippet(withQuestion(blank))).toContain('"questionText": ""');
+    }
+  });
+
+  it("keeps question text with visible characters exactly as written", () => {
+    const text = "  Who lives where?\n ";
+    const q = question(buildQualtricsQsf([{ title: "Study A", config: withQuestion(text) }]));
+    expect(q.Payload.QuestionText).toBe(text);
+    expect(q.Payload.QuestionDescription).toBe(text);
+    expect(buildQualtricsSnippet(withQuestion(text))).toContain(`"questionText": ${JSON.stringify(text)}`);
   });
 });
 
@@ -477,17 +593,12 @@ describe("blocked cells in the exported grid", () => {
 describe("license header", () => {
   const config = makeConfig();
 
-  it("starts every exported script with the MIT notice", () => {
-    const single = buildQualtricsSnippet(config);
-    const multi = buildQualtricsMultiQuestionSnippet([
-      { title: "Grid", embeddedDataField: "GridAssignments", config },
-    ]);
-    for (const js of [single, multi]) {
-      expect(js.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
-      expect(js).toContain("MIT License");
-      expect(js).toContain("Copyright (c) 2026 Justin Lucas Sola");
-      expect(js).toContain("https://github.com/justinsola/GRIDDY");
-    }
+  it("starts the exported script with the MIT notice", () => {
+    const js = buildQualtricsSnippet(config);
+    expect(js.startsWith(EXPORT_LICENSE_HEADER)).toBe(true);
+    expect(js).toContain("MIT License");
+    expect(js).toContain("Copyright (c) 2026 Justin Lucas Sola");
+    expect(js).toContain("https://github.com/justinsola/GRIDDY");
   });
 
   it("keeps the header a single comment that does not break the script", () => {
@@ -513,12 +624,6 @@ describe("field name ending for a grid exported on its own", () => {
     ...base,
     survey: { ...base.survey, fieldSuffix },
   });
-  const declaredFields = (config: GridConfig): string[] => {
-    const qsf = JSON.parse(buildQualtricsQsfForConfig(config));
-    const flow = qsf.SurveyElements.find((e: { Element: string }) => e.Element === "FL");
-    const ed = flow.Payload.Flow.find((f: { Type: string }) => f.Type === "EmbeddedData");
-    return ed.EmbeddedData.map((d: { Field: string }) => d.Field);
-  };
 
   it("keeps the plain names when no ending is set", () => {
     expect(singleGridFieldNames(makeConfig())).toEqual({
@@ -537,15 +642,14 @@ describe("field name ending for a grid exported on its own", () => {
     });
   });
 
-  it("uses the same names in the .qsf and in the script", () => {
-    const config = withEnding("Q2");
-    expect(declaredFields(config)).toEqual(["GridAssignments_Q2"]);
-    const qsf = JSON.parse(buildQualtricsQsfForConfig(config));
-    const question = qsf.SurveyElements.find((e: { Element: string }) => e.Element === "SQ");
-    expect(question.Payload.QuestionJS).toContain('"GridAssignments_Q2"');
-    expect(declaredFields(withEnding("Q2", makeExperimentalConfig("paint")))).toEqual([
-      "GridPrefills_Q2",
-      "GridResponses_Q2",
-    ]);
+  it("declares in the .qsf the __js_ names of the fields the script saves", () => {
+    const qsf = buildQualtricsQsfForConfig(withEnding("Q2"));
+    expect(declaredFields(qsf)).toEqual(["__js_GridAssignments_Q2"]);
+    const question = JSON.parse(qsf).SurveyElements.find((e: { Element: string }) => e.Element === "SQ");
+    expect(question.Payload.QuestionJS).toContain('saveField("GridAssignments_Q2"');
+    expect(recordedOnDisplay(qsf)).toEqual(["__js_GridAssignments_Q2"]);
+    const experiment = buildQualtricsQsfForConfig(withEnding("Q2", makeExperimentalConfig("paint")));
+    expect(declaredFields(experiment)).toEqual(["__js_GridPrefills_Q2", "__js_GridResponses_Q2"]);
+    expect(recordedOnDisplay(experiment).sort()).toEqual(["__js_GridPrefills_Q2", "__js_GridResponses_Q2"]);
   });
 });
