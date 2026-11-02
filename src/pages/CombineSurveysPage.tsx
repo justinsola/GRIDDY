@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
@@ -69,6 +69,20 @@ function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
   return qsfEmbeddedFields(buildQsfItem(survey, fieldLabel))
     .map(recordedFieldName)
     .join(" and ");
+}
+
+/** Lets a long field name wrap after its underscores instead of mid-word. */
+function breakAtUnderscores(text: string) {
+  return text.split("_").map((part, i, parts) => (
+    <Fragment key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <>
+          _<wbr />
+        </>
+      )}
+    </Fragment>
+  ));
 }
 
 export const EDITOR_NAME_MISSING =
@@ -350,7 +364,7 @@ export default function CombineSurveysPage() {
                   key={survey.id}
                   className="flex flex-col gap-2 rounded-lg border border-hairline-warm bg-paper-card p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent-tint text-xs font-bold text-accent">
                       {index + 1}
                     </span>
@@ -358,14 +372,16 @@ export default function CombineSurveysPage() {
                       <span className="font-semibold text-ink">
                         {survey.name || survey.id.slice(0, 8)}
                       </span>
-                      <span className="break-all font-mono text-[10.5px] text-ink-faint">
+                      <span className="break-words font-mono text-[10.5px] text-ink-faint">
                         Saved in Qualtrics as{" "}
-                        {savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey))}
+                        {breakAtUnderscores(
+                          savedFieldNames(survey, fieldOverrides[survey.id] ?? defaultFieldLabel(survey)),
+                        )}
                       </span>
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
                     <label className="flex items-center gap-1.5 text-xs text-ink-faint">
                       Data field
                       <input

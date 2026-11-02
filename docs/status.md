@@ -25,7 +25,7 @@ changes; it is the one place that says where the project stands._
 ## What the app does today
 
 - **Editor** (`/`): question text, rows and columns (max 10 each), optional centre cell with its own label, background image URL, barriers (blocked cells with their own colour or image), categories as a comma-separated list with per-category colour, image and layer mode. A hint under the question box says that leaving it empty (or only spaces) shows the wording written in Qualtrics instead.
-- **Saving**: Save asks "Replace, or save as a new survey?" when the survey was renamed since it was opened or saved, or saved in another tab or window since. The multi-question page's "Save the editor's changes" asks the same.
+- **Saving**: Save asks "Replace, or save as a new survey?" when the survey was renamed since it was opened or saved, or changed since (saved in another tab or window, or replaced by importing a backup). The multi-question page's "Save the editor's changes" asks the same.
 - **Respondent input**: paint (click a category, then cells), dropdown per cell, or drag and drop. The export also supports a look-only grid (`allowInteraction: false`), but the editor has no control for it yet.
 - **Words shown to respondents** (section 03): each grid can reword every text GRIDDY shows respondents, such as "Placing:", the empty-cell reminder and its buttons, Next, and what screen readers say. English by default; an empty box keeps the English.
 - **Experimental mode**: the grid is pre-filled (fixed, shuffled or weighted) and respondents react with response labels (colour and picture, no layer mode); answers go to `__js_GridPrefills` and `__js_GridResponses` instead of `__js_GridAssignments`.

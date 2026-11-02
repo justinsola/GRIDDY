@@ -293,8 +293,8 @@ Decided on 2 November 2026: the eight questions of 1 November, and one more
 about the previews.
 
 1. **Saving:** Save asks "Replace, or save as a new survey?" when the survey
-   was renamed since it was opened or saved, or saved in another tab or
-   window since. The multi-question page's "Save the editor's changes" asks
+   was renamed since it was opened or saved, or changed since (in another
+   tab or window, or by importing a backup). The multi-question page's "Save the editor's changes" asks
    too. My surveys has Duplicate. Done.
 2. **Reaction labels:** Layer mode is removed for response labels and kept
    for categories. The picture hint says what respondents see. Done.
@@ -387,8 +387,8 @@ Fixed on 2 November, with the decisions above:
   the grid, its reminder or its Next (Part D step 8, Part E).
 - **Question text** made only of spaces counts as empty, so respondents see
   the wording written in Qualtrics.
-- **Saving:** Save asks before replacing a renamed survey or one saved in
-  another tab or window since; My surveys has Duplicate; importing a backup
+- **Saving:** Save asks before replacing a renamed survey or one changed
+  since (in another tab or window, or by importing a backup); My surveys has Duplicate; importing a backup
   tells surveys apart by id, so a copy is no longer skipped as a duplicate.
 - **Previews:** both show the grid at full size, with Phone and Fit views;
   the design preview says what a click does, and Clear pre-fills asks
