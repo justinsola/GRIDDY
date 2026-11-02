@@ -345,6 +345,18 @@ it("starts both previews at full size when this browser's storage is blocked", (
   expect(isPressed("Phone")).toBe(true);
 });
 
+it("runs the grid's own words for respondents in the respondent preview", () => {
+  renderPanel();
+  act(() =>
+    editor.dispatch({ type: "updateSurvey", patch: { respondentTexts: { next: "Siguiente", placing: "Colocando:" } } }),
+  );
+  click("Respondent preview");
+  // The preview runs the exported script, which carries the grid's texts.
+  const page = host.querySelector("iframe")!.srcdoc;
+  expect(page).toContain("Siguiente");
+  expect(page).toContain("Colocando:");
+});
+
 it("starts at full size when the remembered view is not one it knows", () => {
   window.localStorage.setItem(DESIGN_VIEW_STORAGE_KEY, "50%");
   window.localStorage.setItem(RESPONDENT_VIEW_STORAGE_KEY, "tablet");

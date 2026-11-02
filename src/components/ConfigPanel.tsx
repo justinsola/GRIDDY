@@ -4,6 +4,7 @@ import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorCo
 import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
 import ImageInput from "./ImageInput";
+import RespondentTextsEditor from "./RespondentTextsEditor";
 
 // ---------------------------------------------------------------------------
 // Selection-mode card data
@@ -606,6 +607,7 @@ export const ConfigPanel: React.FC = () => {
             value={survey.skipBehavior ?? "remind"}
             onChange={(v) => dispatch({ type: "updateSurvey", patch: { skipBehavior: v } })}
           />
+          <RespondentTextsEditor />
         </section>
 
         {/* 04 — Add experiment opt-in */}
@@ -705,6 +707,7 @@ export const ConfigPanel: React.FC = () => {
           value={survey.skipBehavior ?? "remind"}
           onChange={(v) => dispatch({ type: "updateSurvey", patch: { skipBehavior: v } })}
         />
+        <RespondentTextsEditor />
       </SummaryRow>
 
       {/* THE EXPERIMENT divider */}

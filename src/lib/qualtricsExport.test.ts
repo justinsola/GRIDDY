@@ -1,4 +1,6 @@
+import { parse } from "acorn";
 import { describe, it, expect } from "vitest";
+import { DEFAULT_RESPONDENT_TEXTS, respondentTextsFor, type RespondentTexts } from "./respondentTexts";
 import {
   EXPORT_LICENSE_HEADER,
   JS_FIELD_PREFIX,
@@ -416,8 +418,9 @@ describe("buildQualtricsSnippet experimental respondent input methods", () => {
 
   it("implements paint, drag-drop, and dropdown reaction placement", () => {
     const js = buildQualtricsSnippet(makeExperimentalConfig("paint"));
-    // paint: click-to-place reaction toolbar
-    expect(js).toContain('respToolbarLabel.textContent = "Reacting:"');
+    // paint: click-to-place reaction toolbar, labelled from the grid's texts
+    expect(js).toContain("respToolbarLabel.textContent = texts.reacting");
+    expect(js).toContain('"reacting": "Reacting:"');
     expect(js).toContain("experimentalResponses[cellKey] = activeResponseLabel");
     // drag-drop: draggable reaction tray + clear chip
     expect(js).toContain("Drag a reaction onto a cell, or select a reaction and then a cell:");
@@ -449,7 +452,11 @@ describe("buildQualtricsSnippet experimental respondent input methods", () => {
  * returning the rendered question container so tests can inspect the DOM.
  */
 function runSnippet(config: GridConfig): HTMLElement {
-  const snippet = buildQualtricsSnippet(config);
+  return runScript(buildQualtricsSnippet(config));
+}
+
+/** Run an exported script, such as a .qsf question's, as runSnippet does. */
+function runScript(snippet: string): HTMLElement {
   const readyCbs: Array<() => void> = [];
   (globalThis as unknown as { Qualtrics: unknown }).Qualtrics = {
     SurveyEngine: {
@@ -651,5 +658,89 @@ describe("field name ending for a grid exported on its own", () => {
     const experiment = buildQualtricsQsfForConfig(withEnding("Q2", makeExperimentalConfig("paint")));
     expect(declaredFields(experiment)).toEqual(["__js_GridPrefills_Q2", "__js_GridResponses_Q2"]);
     expect(recordedOnDisplay(experiment).sort()).toEqual(["__js_GridPrefills_Q2", "__js_GridResponses_Q2"]);
+  });
+});
+
+describe("words shown to respondents, in the export", () => {
+  const withTexts = (respondentTexts: RespondentTexts, base = makeConfig()): GridConfig => ({
+    ...base,
+    survey: { ...base.survey, respondentTexts },
+  });
+  const questionScripts = (qsf: string): string[] =>
+    JSON.parse(qsf)
+      .SurveyElements.filter((e: { Element: string }) => e.Element === "SQ")
+      .map((q: { Payload: { QuestionJS: string } }) => q.Payload.QuestionJS);
+  /** The texts of a script's buttons and labels, as respondents see them. */
+  const shownWords = (js: string): string[] => {
+    const container = runScript(js);
+    const words = Array.from(container.querySelectorAll("button, span")).map((el) => el.textContent ?? "");
+    container.remove();
+    return words;
+  };
+  // Parses as the ES2017 the script must stay within, like old browsers.
+  const parseES2017 = (js: string) => () => parse(js, { ecmaVersion: 2017 });
+
+  // Text that could break the script it is written into: quotes, a
+  // backslash, the end of a script element, line breaks, piped text that
+  // Qualtrics fills in, and the line separator ES2017 strings cannot hold.
+  const BACKSLASH = String.fromCharCode(92);
+  const LINE_SEPARATOR = String.fromCharCode(0x2028);
+  const tricky = [
+    `Say "next" or 'next'`,
+    `a ${BACKSLASH} backslash, ${BACKSLASH}n and ${BACKSLASH}x41`,
+    "</script><script>alert(1)</script>",
+    "piped ${e://Field/Name} text",
+    `a line${LINE_SEPARATOR}separator`,
+  ].join("\n");
+
+  it("ships GRIDDY's English when the grid has no wording of its own", () => {
+    expect(respondentTextsFor(undefined)).toEqual(DEFAULT_RESPONDENT_TEXTS);
+    const js = buildQualtricsSnippet(makeConfig());
+    expect(js).toContain('"next": "Next"');
+    expect(js).toContain('"placing": "Placing:"');
+    // Nothing in the script looks like piped text to Qualtrics.
+    expect(js).not.toContain("${");
+    expect(parseES2017(js)).not.toThrow();
+  });
+
+  it("ships the grid's own wording once, merged with the English for the rest", () => {
+    const js = buildQualtricsSnippet(withTexts({ next: "Siguiente", showMe: " " }));
+    expect(js).toContain('"next": "Siguiente"');
+    expect(js).toContain('"showMe": "Show me"');
+    expect(js.split("Siguiente")).toHaveLength(2);
+    expect(js).not.toContain('"respondentTexts"');
+  });
+
+  it("keeps quotes, backslashes, </script>, line breaks and ${ exactly as written", () => {
+    const config = withTexts({ next: tricky, placing: tricky });
+    const [questionJs] = questionScripts(buildQualtricsQsfForConfig(config));
+    for (const js of [buildQualtricsSnippet(config), questionJs]) {
+      expect(parseES2017(js)).not.toThrow();
+      expect(js).not.toContain("</script");
+      expect(js).not.toContain("${");
+      expect(js).not.toContain(LINE_SEPARATOR);
+      const words = shownWords(js);
+      // The Next button and the "Placing:" label.
+      expect(words.filter((w) => w === tricky)).toHaveLength(2);
+    }
+  });
+
+  it("gives each grid of a multi-question .qsf its own wording", () => {
+    const qsf = buildQualtricsQsf(
+      [
+        {
+          title: "Español",
+          config: withTexts({ next: "Siguiente", placing: "Colocando:" }),
+          embeddedDataField: "GridAssignments_ES",
+        },
+        { title: "English", config: makeConfig(), embeddedDataField: "GridAssignments_EN" },
+      ],
+      "Bundle",
+    );
+    const [spanish, english] = questionScripts(qsf).map(shownWords);
+    expect(spanish).toEqual(expect.arrayContaining(["Siguiente", "Colocando:"]));
+    expect(spanish).not.toContain("Next");
+    expect(english).toEqual(expect.arrayContaining(["Next", "Placing:"]));
+    expect(english).not.toContain("Siguiente");
   });
 });

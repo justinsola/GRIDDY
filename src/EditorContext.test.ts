@@ -8,6 +8,7 @@ import {
   splitCsvPreservingBlanks,
 } from "./EditorContext";
 import type { GridConfig } from "./grid-types";
+import type { RespondentTexts } from "./lib/respondentTexts";
 
 // ─── encodeNamesCsv / splitCsvPreservingBlanks ─────────────────────────────────
 
@@ -557,5 +558,46 @@ describe("normalizeConfig repairs older saves", () => {
     expect(normalizeConfig(once)).toEqual(once);
     expect(once.layout.rows).toBe(2);
     expect(once.survey.categoriesCsv).toBe("A, B");
+  });
+});
+
+// ─── normalizeConfig: the grid's own words for respondents ────────────────────
+
+describe("normalizeConfig and the words shown to respondents", () => {
+  function withTexts(respondentTexts: unknown): GridConfig {
+    const base = makeBaseConfig();
+    return { ...base, survey: { ...base.survey, respondentTexts: respondentTexts as RespondentTexts } };
+  }
+
+  it("keeps the wording a researcher wrote", () => {
+    const texts = { next: "Siguiente", emptyOther: "Quedan {n} celdas vacías." };
+    const config = withTexts(texts);
+    expect(normalizeConfig(config).survey.respondentTexts).toBe(texts);
+    expect(editorReducer(makeState(), { type: "setConfig", config }).config.survey.respondentTexts).toEqual(texts);
+  });
+
+  it("drops unknown texts, values that are not text and texts left empty", () => {
+    const out = normalizeConfig(
+      withTexts({ next: "Siguiente", nextButton: "Weiter", showMe: 3, placing: "   ", scrollHint: "", toString: "x" }),
+    );
+    expect(out.survey.respondentTexts).toEqual({ next: "Siguiente" });
+  });
+
+  it("drops wording that is not a set of texts", () => {
+    for (const junk of ["Siguiente", ["Siguiente"], null, 7, {}]) {
+      expect(normalizeConfig(withTexts(junk)).survey.respondentTexts).toBeUndefined();
+    }
+  });
+
+  it("leaves a survey saved without its own wording as it was", () => {
+    const out = normalizeConfig(makeBaseConfig());
+    expect("respondentTexts" in out.survey).toBe(false);
+    expect(JSON.stringify(normalizeConfig(out))).toBe(JSON.stringify(out));
+  });
+
+  it("changes nothing the second time", () => {
+    const once = normalizeConfig(withTexts({ next: "Siguiente", junk: "x" }));
+    expect(normalizeConfig(once)).toEqual(once);
+    expect(JSON.stringify(normalizeConfig(once))).toBe(JSON.stringify(once));
   });
 });

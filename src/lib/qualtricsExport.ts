@@ -1,4 +1,5 @@
 import { GridConfig } from "../grid-types";
+import { respondentTextsFor } from "./respondentTexts";
 
 export interface QualtricsExportOptions {
   /** Embedded data field used in standard (non-experimental) mode. */
@@ -93,6 +94,18 @@ function exportedQuestionText(text: string | undefined): string {
   return text && text.trim() ? text : "";
 }
 
+/** JSON for researcher-written text that the script embeds as code. "<" is
+ * escaped so no text can close the script element of a page that embeds
+ * the script ("</script>"), "$" so Qualtrics does not fill in "${...}" as
+ * piped text, and the line and paragraph separators, which strings may not
+ * hold in ES2017. The values the script reads stay exactly as written. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(
+    /[<$\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 export function buildQualtricsSnippet(
   config: GridConfig,
   options: QualtricsExportOptions = {},
@@ -105,12 +118,15 @@ export function buildQualtricsSnippet(
     // the wording written in Qualtrics instead of an empty line.
     layout: { ...config.layout, questionText: exportedQuestionText(config.layout.questionText) },
     tuning: config.tuning,
-    survey: config.survey,
+    // The grid's own wording for the texts around it goes in once, merged
+    // with GRIDDY's English, as `texts` below.
+    survey: { ...config.survey, respondentTexts: undefined },
     // A switched-off experiment stays in the editor but is not shipped,
     // so its settings and reaction images do not bloat the exported script.
     experimental: config.experimental?.enabled ? config.experimental : null,
   };
   const cfgJson = JSON.stringify(exportConfig, null, 2);
+  const textsJson = scriptJson(respondentTextsFor(config.survey.respondentTexts));
 
   return `${EXPORT_LICENSE_HEADER}
 Qualtrics.SurveyEngine.addOnload(function()
@@ -152,6 +168,39 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	container.setAttribute("data-griddy-root", "");
 
 	var cfg = ${cfgJson};
+
+	// The words GRIDDY adds around the grid: this grid's own wording where
+	// the researcher wrote some, GRIDDY's English for the rest.
+	var texts = ${textsJson};
+
+	// A text with its placeholders, such as {n} or {row}, filled in. One pass
+	// with split rather than a regex (regex escapes do not survive this
+	// template string), so a label that looks like a placeholder is shown as
+	// it is.
+	function fillText(key, values) {
+		var pieces = String(texts[key]).split("{");
+		var text = pieces[0];
+		for (var p = 1; p < pieces.length; p++) {
+			var end = pieces[p].indexOf("}");
+			var name = end > 0 ? pieces[p].slice(0, end) : "";
+			if (name && Object.prototype.hasOwnProperty.call(values, name) && values[name] !== undefined) {
+				text += values[name] + pieces[p].slice(end + 1);
+			} else {
+				text += "{" + pieces[p];
+			}
+		}
+		return text;
+	}
+
+	// Whole sentences joined into one text, with a space between them except
+	// after a full-width stop (Chinese or Japanese), which needs none.
+	function joinSentences(sentences) {
+		return sentences.reduce(function (text, sentence) {
+			if (!text) return sentence;
+			return text + ("。！？".indexOf(text.charAt(text.length - 1)) === -1 ? " " : "") + sentence;
+		}, "");
+	}
+
 	var surveyCfg = cfg.survey || {};
 	var categories = [];
 	var allowInteraction = !!surveyCfg.allowInteraction;
@@ -673,7 +722,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			bottomDiv.style.flexShrink = "0";
 			bottomDiv.style.padding = "2px";
 			var select = document.createElement("select");
-			select.setAttribute("aria-label", "Reaction to " + catName + " in " + rowColText(key));
+			select.setAttribute("aria-label", fillText("reactionDropdownName", cellValues(key, catName)));
 			select.style.width = "100%";
 			select.style.border = "1px solid #e2dccf";
 			select.style.borderRadius = "4px";
@@ -684,7 +733,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 			var emptyOpt = document.createElement("option");
 			emptyOpt.value = "";
-			emptyOpt.textContent = "\u2014 react \u2014";
+			emptyOpt.textContent = texts.chooseReaction;
 			select.appendChild(emptyOpt);
 
 			responseLabels.forEach(function (lbl) {
@@ -905,7 +954,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		}
 
 		var select = document.createElement("select");
-		select.setAttribute("aria-label", "Label for " + rowColText(key));
+		select.setAttribute("aria-label", fillText("dropdownName", cellValues(key)));
 		select.style.width = "100%";
 		select.style.minWidth = "0";
 		select.style.flexShrink = "0";
@@ -918,7 +967,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 		var emptyOption = document.createElement("option");
 		emptyOption.value = "";
-		emptyOption.textContent = "Choose label";
+		emptyOption.textContent = texts.chooseLabel;
 		select.appendChild(emptyOption);
 
 		categories.forEach(function (cat) {
@@ -997,7 +1046,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		var delBtn = document.createElement("button");
 		delBtn.type = "button";
 		delBtn.textContent = "×";
-		delBtn.title = "Clear cell";
+		delBtn.title = texts.clearButtonTitle;
 		delBtn.style.position = "absolute";
 		delBtn.style.top = "2px";
 		delBtn.style.right = "2px";
@@ -1170,21 +1219,25 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	var keyboardPick = null;
 	var keyboardPickChip = null;
 
-	function rowColText(key) {
+	// What the texts that name a cell fill in: its row and column, from its
+	// key "r{row}-c{col}", and the label and reaction it holds.
+	function cellValues(key, label, reaction) {
 		var parts = key.slice(1).split("-c");
-		return "row " + parts[0] + ", column " + parts[1];
+		return { row: parts[0], col: parts[1], label: label, reaction: reaction };
 	}
 
+	// Only cells a respondent can act on are described: in an experiment,
+	// the pre-filled ones.
 	function describeCell(key) {
-		var text = rowColText(key) + ": ";
 		if (isExperimental) {
-			text += prefills[key] || "empty";
-			if (experimentalResponses[key]) text += ", reaction " + experimentalResponses[key];
-			else if (prefills[key]) text += ", no reaction yet";
-		} else {
-			text += assignments[key] || "empty";
+			if (!prefills[key]) return fillText("cellEmpty", cellValues(key));
+			return experimentalResponses[key]
+				? fillText("cellReaction", cellValues(key, prefills[key], experimentalResponses[key]))
+				: fillText("cellNoReaction", cellValues(key, prefills[key]));
 		}
-		return text.charAt(0).toUpperCase() + text.slice(1);
+		return assignments[key]
+			? fillText("cellLabel", cellValues(key, assignments[key]))
+			: fillText("cellEmpty", cellValues(key));
 	}
 
 	function cellIsActionable(key, isCenterCell, isBlockedCell) {
@@ -1238,7 +1291,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	function enableKeyboardPick(chip, value) {
 		chip.setAttribute("aria-pressed", "false");
-		chip.setAttribute("aria-label", chip.textContent + ". Select it to pick it up, then select a cell to place it.");
+		chip.setAttribute("aria-label", fillText("chipHelp", { label: chip.textContent }));
 		// A button gets a click from Enter, Space and screen readers, so a key
 		// press cannot toggle twice. Mouse clicks and taps do nothing here.
 		chip.addEventListener("click", function (e) {
@@ -1408,7 +1461,10 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		toolbar.style.marginBottom = "6px";
 
 		var toolbarLabel = document.createElement("span");
-		toolbarLabel.textContent = "Placing:";
+		toolbarLabel.textContent = texts.placing;
+		// GRIDDY's texts take the direction of their own words, so their
+		// punctuation stays in place whatever the survey's direction.
+		toolbarLabel.setAttribute("dir", "auto");
 		toolbarLabel.style.fontSize = "11px";
 		toolbarLabel.style.fontWeight = "600";
 		toolbarLabel.style.color = "#6b6455";
@@ -1468,7 +1524,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		dragHelp.style.marginBottom = "8px";
 
 		var dragLabel = document.createElement("span");
-		dragLabel.textContent = "Drag a label onto a cell, or select a label and then a cell:";
+		dragLabel.textContent = texts.dragLabel;
+		dragLabel.setAttribute("dir", "auto");
 		dragLabel.style.fontSize = "11px";
 		dragLabel.style.fontWeight = "600";
 		dragLabel.style.color = "#6b6455";
@@ -1482,7 +1539,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		categories.forEach(function (cat) {
 			dragTray.appendChild(createCategoryChip(cat, false));
 		});
-		dragTray.appendChild(createCategoryChip("Clear cell", true));
+		dragTray.appendChild(createCategoryChip(texts.clearCellChip, true));
 
 		dragHelp.appendChild(dragTray);
 		container.appendChild(dragHelp);
@@ -1497,7 +1554,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respToolbar.style.marginBottom = "6px";
 
 		var respToolbarLabel = document.createElement("span");
-		respToolbarLabel.textContent = "Reacting:";
+		respToolbarLabel.textContent = texts.reacting;
+		respToolbarLabel.setAttribute("dir", "auto");
 		respToolbarLabel.style.fontSize = "11px";
 		respToolbarLabel.style.fontWeight = "600";
 		respToolbarLabel.style.color = "#6b6455";
@@ -1557,7 +1615,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		respDragHelp.style.marginBottom = "8px";
 
 		var respDragLabel = document.createElement("span");
-		respDragLabel.textContent = "Drag a reaction onto a cell, or select a reaction and then a cell:";
+		respDragLabel.textContent = texts.dragReaction;
+		respDragLabel.setAttribute("dir", "auto");
 		respDragLabel.style.fontSize = "11px";
 		respDragLabel.style.fontWeight = "600";
 		respDragLabel.style.color = "#6b6455";
@@ -1571,7 +1630,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		responseLabels.forEach(function (lbl) {
 			respDragTray.appendChild(createResponseChip(lbl, false));
 		});
-		respDragTray.appendChild(createResponseChip("Clear reaction", true));
+		respDragTray.appendChild(createResponseChip(texts.clearReactionChip, true));
 
 		respDragHelp.appendChild(respDragTray);
 		container.appendChild(respDragHelp);
@@ -1781,7 +1840,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	var scrollHint = document.createElement("div");
 	scrollHint.setAttribute("data-griddy-scroll-hint", "");
-	scrollHint.textContent = "↔ Part of this grid is out of view. Scroll sideways to see all of it.";
+	scrollHint.textContent = texts.scrollHint;
+	scrollHint.setAttribute("dir", "auto");
 	scrollHint.style.display = "none";
 	scrollHint.style.margin = "0 0 6px";
 	scrollHint.style.fontSize = "12px";
@@ -1895,10 +1955,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		parts.badge.textContent = emptyCount > 0 ? String(emptyCount) : "";
 		parts.badge.style.display = emptyCount > 0 ? "block" : "none";
 		parts.button.style.backgroundColor = emptyCount > 0 ? "#c2410c" : "rgba(42,36,28,0.78)";
-		parts.button.setAttribute(
-			"aria-label",
-			"Scroll the grid " + parts.side + (emptyCount > 0 ? " (" + emptyCount + (emptyCount === 1 ? " empty cell there)" : " empty cells there)") : "")
-		);
+		// "scrollLeft", or "scrollLeftEmptyOne" and so on when the reminder
+		// counts empty cells past this arrow.
+		var key = parts.side === "left" ? "scrollLeft" : "scrollRight";
+		if (emptyCount > 0) key += emptyCount === 1 ? "EmptyOne" : "EmptyOther";
+		parts.button.setAttribute("aria-label", fillText(key, { n: emptyCount }));
 	}
 
 	function updateIndicators() {
@@ -1936,6 +1997,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	reminder.style.fontSize = "13px";
 	reminder.style.lineHeight = "1.4";
 	var reminderText = document.createElement("div");
+	reminderText.setAttribute("dir", "auto");
 	reminder.appendChild(reminderText);
 	var reminderActions = document.createElement("div");
 	reminderActions.style.display = "flex";
@@ -1961,35 +2023,28 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		reminderActions.appendChild(b);
 		return b;
 	}
-	var showMeBtn = makeActionButton("Show me", false);
-	var continueBtn = makeActionButton("Continue anyway", true);
+	var showMeBtn = makeActionButton(texts.showMe, false);
+	var continueBtn = makeActionButton(texts.continueAnyway, true);
 
+	// How many cells are left, where they are, and what to do. Each sentence
+	// is a whole text: its "One" version for 1 cell, its "Other" for more.
 	function describeMissing(missing) {
 		var n = missing.length;
-		var them = n === 1 ? "it" : "them";
 		var off = offscreenCounts(missing);
 		var offCount = off.left + off.right;
-		var text = isExperimental
-			? (n === 1 ? "1 pre-filled cell has no reaction yet" : n + " pre-filled cells have no reaction yet")
-			: (n === 1 ? "1 cell is still empty" : n + " cells are still empty");
-		if (offCount > 0) {
-			if (offCount === n) {
-				text += n === 1 ? ", and it is off-screen" : ", all of them off-screen";
-			} else {
-				text += ", including " + offCount + " off-screen";
-			}
-		}
-		text += n === 1 ? ". It is outlined in orange." : ". They are outlined in orange.";
-		if (skipBehavior === "force") {
-			text += isExperimental
-				? " Please react to every outlined cell before continuing."
-				: " Please fill in every outlined cell before continuing.";
+		var kind = isExperimental ? "unreacted" : "empty";
+		var count;
+		if (offCount === 0) {
+			count = fillText(kind + (n === 1 ? "One" : "Other"), { n: n });
+		} else if (offCount === n) {
+			count = fillText(kind + (n === 1 ? "OffscreenOne" : "OffscreenOther"), { n: n });
 		} else {
-			text += isExperimental
-				? " You can react to " + them + " now or continue anyway."
-				: " You can fill " + them + " in now or continue anyway.";
+			count = fillText(kind + (offCount === 1 ? "SomeOffscreenOne" : "SomeOffscreenOther"), { n: n, off: offCount });
 		}
-		return text;
+		var action = skipBehavior === "force"
+			? texts[isExperimental ? "requireReact" : "requireFill"]
+			: texts[(isExperimental ? "remindReact" : "remindFill") + (n === 1 ? "One" : "Other")];
+		return joinSentences([count, texts[n === 1 ? "outlinedOne" : "outlinedOther"], action]);
 	}
 
 	function refreshHighlights() {
@@ -2071,17 +2126,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	// what to do, without the visual details.
 	function announcement(missing) {
 		var n = missing.length;
-		var text = isExperimental
-			? (n === 1 ? "1 pre-filled cell has no reaction yet." : n + " pre-filled cells have no reaction yet.")
-			: (n === 1 ? "1 cell is still empty." : n + " cells are still empty.");
-		if (skipBehavior === "force") {
-			text += isExperimental
-				? " Please react to every pre-filled cell before continuing."
-				: " Please fill in every cell before continuing.";
-		} else {
-			text += " Use Show me to find " + (n === 1 ? "it" : "them") + ", or Continue anyway.";
-		}
-		return text;
+		var count = fillText((isExperimental ? "unreacted" : "empty") + (n === 1 ? "One" : "Other"), { n: n });
+		var action = skipBehavior === "force"
+			? texts[isExperimental ? "spokenRequireReact" : "spokenRequireFill"]
+			: texts[n === 1 ? "spokenRemindOne" : "spokenRemindOther"];
+		return joinSentences([count, action]);
 	}
 
 	function showReminder() {
@@ -2212,7 +2261,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 
 	var nextBtn = document.createElement("button");
 	nextBtn.type = "button";
-	nextBtn.textContent = "Next";
+	nextBtn.textContent = texts.next;
 	nextBtn.style.border = "1px solid #8a2e3b";
 	nextBtn.style.backgroundColor = "#8a2e3b";
 	nextBtn.style.color = "#ffffff";

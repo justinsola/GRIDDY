@@ -237,3 +237,22 @@ it("shows the fields as Qualtrics records them, and names a field two questions 
   expect(host.textContent).toContain('both write to the field "__js_GridAssignments_Map"');
   expect(button("Download .qsf").disabled).toBe(true);
 });
+
+it("keeps each grid's own words for respondents in the .qsf", async () => {
+  act(() => root.render(page(false)));
+  const { config } = editor.state;
+  await saveSurvey({
+    ...config,
+    id: "mapa",
+    name: "Mapa",
+    survey: { ...config.survey, respondentTexts: { next: "Siguiente" } },
+  });
+  await saveSurvey({ ...config, id: "map", name: "Map" });
+  await act(async () => root.render(page(true)));
+  for (let i = 0; i < 2; i++) act(() => button("+ Add").click());
+  const scripts = JSON.parse(await downloadQsf())
+    .SurveyElements.filter((e: { Element: string }) => e.Element === "SQ")
+    .map((q: { Payload: { QuestionJS: string } }) => q.Payload.QuestionJS);
+  expect(scripts.filter((js: string) => js.includes('"next": "Siguiente"'))).toHaveLength(1);
+  expect(scripts.filter((js: string) => js.includes('"next": "Next"'))).toHaveLength(1);
+});

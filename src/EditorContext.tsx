@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import { repairGridSize } from "./lib/gridSize";
+import { cleanRespondentTexts } from "./lib/respondentTexts";
 import type { SurveyMeta } from "./lib/surveysApi";
 import {
   CategoryMeta,
@@ -199,6 +200,11 @@ export function normalizeConfig(config: GridConfig): GridConfig {
       selectionMode: config.survey.selectionMode ?? "paint",
       skipBehavior: config.survey.skipBehavior ?? "remind",
       categoryMeta: syncCategoryMeta(categories.csv, categories.meta),
+      // The grid's own wording keeps only known texts with words in them;
+      // a survey saved without any stays without.
+      ...("respondentTexts" in config.survey
+        ? { respondentTexts: cleanRespondentTexts(config.survey.respondentTexts) }
+        : {}),
     },
     experimental: {
       ...defaultExperimental(),

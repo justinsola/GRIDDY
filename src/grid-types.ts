@@ -1,3 +1,5 @@
+import type { RespondentTexts } from "./lib/respondentTexts";
+
 export type SkipBehavior = "remind" | "allow" | "force";
 
 export interface LayoutConfig {
@@ -62,6 +64,14 @@ export interface SurveyConfig {
    * names.
    */
   fieldSuffix?: string;
+  /**
+   * This grid's own wording for the texts GRIDDY adds around it, such as
+   * "Placing:", the empty-cell reminder, Next and what screen readers say,
+   * keyed by text (see src/lib/respondentTexts.ts). A text left out or
+   * empty shows GRIDDY's English, so surveys saved without it need no
+   * change.
+   */
+  respondentTexts?: RespondentTexts;
   /** Whether the advanced per-category customization panel is expanded. */
   advancedCategories: boolean;
   /** Per-category color and image metadata, keyed by category name. */

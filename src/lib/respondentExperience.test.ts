@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { buildQualtricsQsf, buildQualtricsSnippet, QualtricsExportOptions } from "./qualtricsExport";
+import { RESPONDENT_TEXT_KEYS, type RespondentTextKey } from "./respondentTexts";
 import type { GridConfig } from "../grid-types";
 
 /**
@@ -988,5 +989,311 @@ describe("finger drags near the edge", () => {
     } finally {
       document.elementFromPoint = original;
     }
+  });
+});
+
+describe("words shown to respondents", () => {
+  // Every text GRIDDY adds around the grid, in Spanish.
+  const SPANISH: Record<RespondentTextKey, string> = {
+    placing: "Colocando:",
+    reacting: "Reaccionando:",
+    dragLabel: "Arrastra una etiqueta a una celda, o elige una etiqueta y luego una celda:",
+    dragReaction: "Arrastra una reacción a una celda, o elige una reacción y luego una celda:",
+    clearCellChip: "Vaciar celda",
+    clearReactionChip: "Quitar reacción",
+    clearButtonTitle: "Vaciar esta celda",
+    chooseLabel: "Elige una etiqueta",
+    chooseReaction: "— reacciona —",
+    scrollHint: "↔ Parte de la cuadrícula no se ve. Desplázate de lado para verla entera.",
+    showMe: "Muéstrame",
+    continueAnyway: "Continuar de todos modos",
+    next: "Siguiente",
+    emptyOne: "Queda {n} celda vacía.",
+    emptyOther: "Quedan {n} celdas vacías.",
+    emptyOffscreenOne: "Queda {n} celda vacía, fuera de la pantalla.",
+    emptyOffscreenOther: "Quedan {n} celdas vacías, todas fuera de la pantalla.",
+    emptySomeOffscreenOne: "Quedan {n} celdas vacías, una de ellas fuera de la pantalla.",
+    emptySomeOffscreenOther: "Quedan {n} celdas vacías, {off} de ellas fuera de la pantalla.",
+    unreactedOne: "{n} celda prellenada aún no tiene reacción.",
+    unreactedOther: "{n} celdas prellenadas aún no tienen reacción.",
+    unreactedOffscreenOne: "{n} celda prellenada aún no tiene reacción y está fuera de la pantalla.",
+    unreactedOffscreenOther: "{n} celdas prellenadas aún no tienen reacción, todas fuera de la pantalla.",
+    unreactedSomeOffscreenOne: "{n} celdas prellenadas aún no tienen reacción, una fuera de la pantalla.",
+    unreactedSomeOffscreenOther: "{n} celdas prellenadas aún no tienen reacción, {off} fuera de la pantalla.",
+    outlinedOne: "Está marcada en naranja.",
+    outlinedOther: "Están marcadas en naranja.",
+    remindFillOne: "Puedes llenarla ahora o continuar de todos modos.",
+    remindFillOther: "Puedes llenarlas ahora o continuar de todos modos.",
+    remindReactOne: "Puedes reaccionar a ella ahora o continuar de todos modos.",
+    remindReactOther: "Puedes reaccionar a ellas ahora o continuar de todos modos.",
+    requireFill: "Llena todas las celdas marcadas antes de continuar.",
+    requireReact: "Reacciona a todas las celdas marcadas antes de continuar.",
+    spokenRemindOne: "Usa Muéstrame para encontrarla, o Continuar de todos modos.",
+    spokenRemindOther: "Usa Muéstrame para encontrarlas, o Continuar de todos modos.",
+    spokenRequireFill: "Llena todas las celdas antes de continuar.",
+    spokenRequireReact: "Reacciona a todas las celdas prellenadas antes de continuar.",
+    cellEmpty: "Fila {row}, columna {col}: vacía",
+    cellLabel: "Fila {row}, columna {col}: {label}",
+    cellNoReaction: "Fila {row}, columna {col}: {label}, sin reacción",
+    cellReaction: "Fila {row}, columna {col}: {label}, reacción {reaction}",
+    dropdownName: "Etiqueta de la fila {row}, columna {col}",
+    reactionDropdownName: "Reacción a {label} en la fila {row}, columna {col}",
+    chipHelp: "{label}. Elígela para tomarla y luego elige una celda para colocarla.",
+    scrollLeft: "Desplazar la cuadrícula a la izquierda",
+    scrollRight: "Desplazar la cuadrícula a la derecha",
+    scrollLeftEmptyOne: "Desplazar la cuadrícula a la izquierda ({n} celda vacía allí)",
+    scrollLeftEmptyOther: "Desplazar la cuadrícula a la izquierda ({n} celdas vacías allí)",
+    scrollRightEmptyOne: "Desplazar la cuadrícula a la derecha ({n} celda vacía allí)",
+    scrollRightEmptyOther: "Desplazar la cuadrícula a la derecha ({n} celdas vacías allí)",
+  };
+
+  // A Spanish text with its placeholders filled in. The last test checks
+  // that every text was looked for.
+  const seen = new Set<RespondentTextKey>();
+  function es(key: RespondentTextKey, values: Record<string, string | number> = {}): string {
+    seen.add(key);
+    return Object.entries(values).reduce(
+      (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
+      SPANISH[key],
+    );
+  }
+  const sentences = (...parts: string[]) => parts.join(" ");
+  const inSpanish = (config: GridConfig) => withSurvey({ respondentTexts: SPANISH }, config);
+  // Three pre-filled cells across the first row.
+  const threePrefills = (base = makeConfig()) =>
+    experimental({ fixedAssignments: { "r1-c1": "Family", "r1-c2": "Friends", "r1-c3": "Family" } }, base);
+
+  const reminderText = (container: HTMLElement) => reminder(container).firstElementChild!.textContent;
+  const spoken = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>("[data-griddy-announce]")!.textContent;
+  const arrow = (container: HTMLElement, side: "left" | "right") =>
+    container.querySelector(`[data-griddy-edge="${side}"] button`)!.getAttribute("aria-label");
+  const span = (container: HTMLElement, text: string) =>
+    Array.from(container.querySelectorAll("span")).find((s) => s.textContent === text);
+  const pickUp = (chip: HTMLElement) => chip.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
+  const press = (cell: HTMLElement) =>
+    cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+  /** Lays the 3 × 3 grid out 110 px a column, with the frame showing the
+   * columns from `first` to `last` and the others off-screen. */
+  function showColumns(container: HTMLElement, first: number, last: number) {
+    cells(container).forEach((cell, i) => {
+      const left = (i % 3) * 110;
+      cell.getBoundingClientRect = () => ({ left, right: left + 100, top: 0, bottom: 120, width: 100, height: 120 }) as DOMRect;
+    });
+    const left = (first - 1) * 110;
+    const right = (last - 1) * 110 + 105;
+    container.querySelector<HTMLElement>("[data-griddy-scroller]")!.getBoundingClientRect = () =>
+      ({ left, right, top: 0, bottom: 400, width: right - left, height: 400 }) as DOMRect;
+  }
+
+  it("shows them on screen and in what screen readers hear, for one cell and for several", () => {
+    vi.useFakeTimers();
+    const r = run(inSpanish(makeConfig()));
+    const c = r.container;
+    expect(span(c, es("placing"))).toBeDefined();
+    expect(c.querySelector("[data-griddy-scroll-hint]")!.textContent).toBe(es("scrollHint"));
+    expect(arrow(c, "left")).toBe(es("scrollLeft"));
+    expect(arrow(c, "right")).toBe(es("scrollRight"));
+    const grid = cells(c);
+    expect(grid[0].getAttribute("aria-label")).toBe(es("cellEmpty", { row: 1, col: 1 }));
+    grid[0].click();
+    expect(grid[0].getAttribute("aria-label")).toBe(es("cellLabel", { row: 1, col: 1, label: "Family" }));
+
+    button(c, es("next")).click();
+    expect(r.nextClicks).toBe(0);
+    expect(reminderText(c)).toBe(sentences(es("emptyOther", { n: 7 }), es("outlinedOther"), es("remindFillOther")));
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe(sentences(es("emptyOther", { n: 7 }), es("spokenRemindOther")));
+
+    grid.forEach((cell) => cell.click()); // empties r1-c1 again and fills the others
+    expect(reminderText(c)).toBe(sentences(es("emptyOne", { n: 1 }), es("outlinedOne"), es("remindFillOne")));
+    button(c, es("next")).click();
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe(sentences(es("emptyOne", { n: 1 }), es("spokenRemindOne")));
+    expect(button(c, es("showMe"))).toBeDefined();
+    button(c, es("continueAnyway")).click();
+    expect(r.nextClicks).toBe(1);
+  });
+
+  it("says how many empty cells are off-screen, and the arrows count them", () => {
+    const c = run(inSpanish(makeConfig())).container;
+    showColumns(c, 1, 1);
+    button(c, es("next")).click();
+    // Columns 2 and 3 are off to the right: 5 of the 8 empty cells.
+    expect(reminderText(c)).toBe(
+      sentences(es("emptySomeOffscreenOther", { n: 8, off: 5 }), es("outlinedOther"), es("remindFillOther")),
+    );
+    expect(arrow(c, "right")).toBe(es("scrollRightEmptyOther", { n: 5 }));
+    const grid = cells(c);
+    [1, 2, 5, 7].forEach((i) => grid[i].click());
+    expect(reminderText(c)).toBe(
+      sentences(es("emptySomeOffscreenOne", { n: 4, off: 1 }), es("outlinedOther"), es("remindFillOther")),
+    );
+    expect(arrow(c, "right")).toBe(es("scrollRightEmptyOne", { n: 1 }));
+    [0, 3, 6].forEach((i) => grid[i].click());
+    expect(reminderText(c)).toBe(sentences(es("emptyOffscreenOne", { n: 1 }), es("outlinedOne"), es("remindFillOne")));
+  });
+
+  it("says when every empty cell is off-screen, and counts them past the left arrow", () => {
+    const c = run(inSpanish(makeConfig())).container;
+    showColumns(c, 3, 3);
+    const grid = cells(c);
+    [2, 5, 8].forEach((i) => grid[i].click()); // column 3, the one in view
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(
+      sentences(es("emptyOffscreenOther", { n: 5 }), es("outlinedOther"), es("remindFillOther")),
+    );
+    expect(arrow(c, "left")).toBe(es("scrollLeftEmptyOther", { n: 5 }));
+    [0, 1, 3, 6].forEach((i) => grid[i].click());
+    expect(arrow(c, "left")).toBe(es("scrollLeftEmptyOne", { n: 1 }));
+  });
+
+  it("asks for every cell when cells are required", () => {
+    vi.useFakeTimers();
+    const c = run(inSpanish(withSurvey({ skipBehavior: "force" }))).container;
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(sentences(es("emptyOther", { n: 8 }), es("outlinedOther"), es("requireFill")));
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe(sentences(es("emptyOther", { n: 8 }), es("spokenRequireFill")));
+    expect(button(c, es("continueAnyway")).style.display).toBe("none");
+  });
+
+  it("words the drag tray, its chips and a filled cell's clear button", () => {
+    const c = run(inSpanish(withSurvey({ selectionMode: "dragdrop" }))).container;
+    expect(span(c, es("dragLabel"))).toBeDefined();
+    const clearChip = button(c, es("clearCellChip"));
+    expect(clearChip.getAttribute("aria-label")).toBe(es("chipHelp", { label: SPANISH.clearCellChip }));
+    const family = button(c, "Family");
+    expect(family.getAttribute("aria-label")).toBe(es("chipHelp", { label: "Family" }));
+    pickUp(family);
+    press(cells(c)[0]);
+    expect(cells(c)[0].getAttribute("aria-label")).toBe(es("cellLabel", { row: 1, col: 1, label: "Family" }));
+    expect(cells(c)[0].querySelector("button")!.title).toBe(es("clearButtonTitle"));
+  });
+
+  it("words each dropdown and its empty choice", () => {
+    const select = cells(run(inSpanish(withSurvey({ selectionMode: "dropdown" }))).container)[0].querySelector("select")!;
+    expect(select.getAttribute("aria-label")).toBe(es("dropdownName", { row: 1, col: 1 }));
+    expect(select.options[0].textContent).toBe(es("chooseLabel"));
+  });
+
+  it("words an experiment's toolbar, cells and reminder", () => {
+    vi.useFakeTimers();
+    const c = run(inSpanish(threePrefills())).container;
+    expect(span(c, es("reacting"))).toBeDefined();
+    const grid = cells(c);
+    expect(grid[0].getAttribute("aria-label")).toBe(es("cellNoReaction", { row: 1, col: 1, label: "Family" }));
+    grid[0].click();
+    expect(grid[0].getAttribute("aria-label")).toBe(
+      es("cellReaction", { row: 1, col: 1, label: "Family", reaction: "Agree" }),
+    );
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(sentences(es("unreactedOther", { n: 2 }), es("outlinedOther"), es("remindReactOther")));
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe(sentences(es("unreactedOther", { n: 2 }), es("spokenRemindOther")));
+    grid[1].click();
+    expect(reminderText(c)).toBe(sentences(es("unreactedOne", { n: 1 }), es("outlinedOne"), es("remindReactOne")));
+  });
+
+  it("says how many pre-filled cells without a reaction are off-screen", () => {
+    const c = run(inSpanish(threePrefills())).container;
+    showColumns(c, 1, 1);
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(
+      sentences(es("unreactedSomeOffscreenOther", { n: 3, off: 2 }), es("outlinedOther"), es("remindReactOther")),
+    );
+    const grid = cells(c);
+    grid[2].click();
+    expect(reminderText(c)).toBe(
+      sentences(es("unreactedSomeOffscreenOne", { n: 2, off: 1 }), es("outlinedOther"), es("remindReactOther")),
+    );
+    grid[0].click();
+    expect(reminderText(c)).toBe(
+      sentences(es("unreactedOffscreenOne", { n: 1 }), es("outlinedOne"), es("remindReactOne")),
+    );
+  });
+
+  it("says when every pre-filled cell without a reaction is off-screen", () => {
+    const c = run(inSpanish(threePrefills())).container;
+    showColumns(c, 1, 1);
+    cells(c)[0].click();
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(
+      sentences(es("unreactedOffscreenOther", { n: 2 }), es("outlinedOther"), es("remindReactOther")),
+    );
+  });
+
+  it("asks for a reaction to every pre-filled cell when reactions are required", () => {
+    vi.useFakeTimers();
+    const c = run(inSpanish(threePrefills(withSurvey({ skipBehavior: "force" })))).container;
+    button(c, es("next")).click();
+    expect(reminderText(c)).toBe(sentences(es("unreactedOther", { n: 3 }), es("outlinedOther"), es("requireReact")));
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe(sentences(es("unreactedOther", { n: 3 }), es("spokenRequireReact")));
+  });
+
+  it("words an experiment's drag tray and the clear button on a reaction", () => {
+    const c = run(inSpanish(threePrefills(withSurvey({ selectionMode: "dragdrop" })))).container;
+    expect(span(c, es("dragReaction"))).toBeDefined();
+    expect(button(c, es("clearReactionChip")).getAttribute("aria-label")).toBe(
+      es("chipHelp", { label: SPANISH.clearReactionChip }),
+    );
+    pickUp(button(c, "Agree"));
+    press(cells(c)[0]);
+    expect(cells(c)[0].querySelector("button")!.title).toBe(es("clearButtonTitle"));
+  });
+
+  it("words an experiment's dropdowns", () => {
+    const grid = cells(run(inSpanish(threePrefills(withSurvey({ selectionMode: "dropdown" })))).container);
+    const select = grid[0].querySelector("select")!;
+    expect(select.getAttribute("aria-label")).toBe(es("reactionDropdownName", { label: "Family", row: 1, col: 1 }));
+    expect(select.options[0].textContent).toBe(es("chooseReaction"));
+  });
+
+  it("has looked for every text", () => {
+    expect([...seen].sort()).toEqual([...RESPONDENT_TEXT_KEYS].sort());
+  });
+
+  it("keeps GRIDDY's English for texts left out or left empty", () => {
+    vi.useFakeTimers();
+    const c = run(withSurvey({ respondentTexts: { next: "Siguiente", placing: "  ", showMe: "" } })).container;
+    expect(span(c, "Placing:")).toBeDefined();
+    button(c, "Siguiente").click();
+    expect(reminderText(c)).toBe(
+      "8 cells are still empty. They are outlined in orange. You can fill them in now or continue anyway.",
+    );
+    expect(button(c, "Show me")).toBeDefined();
+    vi.advanceTimersByTime(60);
+    expect(spoken(c)).toBe("8 cells are still empty. Use Show me to find them, or Continue anyway.");
+  });
+
+  it("joins sentences without a space after a Chinese or Japanese full stop", () => {
+    const c = run(
+      withSurvey({
+        respondentTexts: {
+          emptyOther: "还有 {n} 个格子是空的。",
+          outlinedOther: "它们用橙色标出。",
+          remindFillOther: "你可以现在填写，也可以继续。",
+          next: "下一步",
+        },
+      }),
+    ).container;
+    button(c, "下一步").click();
+    expect(reminderText(c)).toBe("还有 8 个格子是空的。它们用橙色标出。你可以现在填写，也可以继续。");
+  });
+
+  it("shows a label that looks like a placeholder as it is", () => {
+    const c = run(withSurvey({ categoriesCsv: "{col}, Friends" })).container;
+    cells(c)[0].click();
+    expect(cells(c)[0].getAttribute("aria-label")).toBe("Row 1, column 1: {col}");
+  });
+
+  it("lets GRIDDY's texts take the direction of their own words, in right-to-left surveys too", () => {
+    const c = run(withSurvey({ respondentTexts: { placing: "مكان:" } })).container;
+    expect(span(c, "مكان:")!.getAttribute("dir")).toBe("auto");
+    expect(c.querySelector("[data-griddy-scroll-hint]")!.getAttribute("dir")).toBe("auto");
+    button(c, "Next").click();
+    expect(reminder(c).firstElementChild!.getAttribute("dir")).toBe("auto");
   });
 });
