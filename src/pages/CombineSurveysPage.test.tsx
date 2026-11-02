@@ -213,5 +213,5 @@ it("names a grid's fields after the field name ending set in its export dialog",
   await act(async () => root.render(page(true)));
   act(() => button("+ Add").click());
   expect(host.textContent).toContain("GridAssignments_Q2");
-  expect(await downloadQsf()).toContain('"Field": "GridAssignments_Q2"');
+  expect(await downloadQsf()).toContain('"Field": "__js_GridAssignments_Q2"');
 });
