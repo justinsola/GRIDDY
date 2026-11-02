@@ -14,6 +14,7 @@ describe("findFieldCollision", () => {
   it("catches two questions with the same name writing to the same field", () => {
     const message = findFieldCollision([item("GridAssignments_Map"), item("GridAssignments_Map")], ["Map", "Map"]);
     expect(message).toContain("Questions 1 (\"Map\") and 2 (\"Map\")");
-    expect(message).toContain("GridAssignments_Map");
+    // The field as Qualtrics records it, the name the page shows.
+    expect(message).toContain('both write to the field "__js_GridAssignments_Map"');
   });
 });

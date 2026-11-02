@@ -13,6 +13,7 @@ import {
 import {
   buildQualtricsSnippet,
   buildQualtricsQsfForConfig,
+  recordedFieldName,
   singleGridFieldNames,
 } from "../lib/qualtricsExport";
 
@@ -449,11 +450,14 @@ export const PreviewPanel: React.FC = () => {
     () => buildQualtricsQsfForConfig(config),
     [config],
   );
+  // The script is given the plain names; Qualtrics records each one as its
+  // "__js_" name, which is what researchers declare and see.
   const exportFields = useMemo(
     () =>
-      expEnabled
+      (expEnabled
         ? [fieldNames.prefillsField, fieldNames.responsesField]
-        : [fieldNames.embeddedDataField],
+        : [fieldNames.embeddedDataField]
+      ).map(recordedFieldName),
     [expEnabled, fieldNames],
   );
 
@@ -1165,14 +1169,14 @@ export const PreviewPanel: React.FC = () => {
                         <>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              {fieldNames.prefillsField}
+                              {recordedFieldName(fieldNames.prefillsField)}
                             </code>{" "}
                             — what was shown, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
                           </li>
                           <li>
                             <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                              {fieldNames.responsesField}
+                              {recordedFieldName(fieldNames.responsesField)}
                             </code>{" "}
                             — what the respondent selected, e.g.{" "}
                             <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Good"}`}</code>
@@ -1181,7 +1185,7 @@ export const PreviewPanel: React.FC = () => {
                       ) : (
                         <li>
                           <code className="rounded bg-emerald-100 px-1 font-mono font-bold">
-                            {fieldNames.embeddedDataField}
+                            {recordedFieldName(fieldNames.embeddedDataField)}
                           </code>{" "}
                           — e.g.{" "}
                           <code className="rounded bg-emerald-100 px-1 font-mono">{`{"r1-c1":"Family"}`}</code>
@@ -1189,11 +1193,13 @@ export const PreviewPanel: React.FC = () => {
                       )}
                     </ul>
                     <p className="mt-1.5 text-emerald-700">
-                      Find them under <strong>Data &amp; Analysis</strong> after
-                      collecting responses. If a field&apos;s column isn&apos;t
-                      shown there, add it with <strong>Column chooser</strong>{" "}
-                      &rarr; <strong>Embedded Data</strong>; data downloads
-                      always include it.
+                      The grid works in Qualtrics&apos; new survey-taking
+                      experience and in the older layouts. Answers appear under{" "}
+                      <strong>Data &amp; Analysis</strong> with the __js_ names
+                      listed above. If a column isn&apos;t shown there, add it
+                      with <strong>Column chooser</strong> &rarr;{" "}
+                      <strong>Embedded Data</strong>; data downloads always
+                      include it.
                     </p>
                     <label className="mt-2 flex flex-wrap items-center gap-2">
                       <span className="font-medium">Field name ending</span>

@@ -13,6 +13,7 @@ import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext"
 import {
   buildQualtricsQsf,
   qsfEmbeddedFields,
+  recordedFieldName,
   sanitizeEmbeddedDataField,
   QualtricsQsfItem,
 } from "../lib/qualtricsExport";
@@ -62,11 +63,11 @@ function defaultFieldLabel(survey: ExportedSurvey): string {
   return /[A-Za-z0-9]/.test(ending) ? ending : survey.name ?? "";
 }
 
-/** The embedded-data field name(s) a question's answers are saved under. */
+/** The embedded-data field name(s) a question's answers are saved under, as
+ * Qualtrics records them ("__js_" and the name the item's script saves). */
 function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
-  const item = buildQsfItem(survey, fieldLabel);
-  return [item.embeddedDataField, item.prefillsField, item.responsesField]
-    .filter(Boolean)
+  return qsfEmbeddedFields(buildQsfItem(survey, fieldLabel))
+    .map(recordedFieldName)
     .join(" and ");
 }
 

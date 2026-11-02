@@ -212,6 +212,28 @@ it("names a grid's fields after the field name ending set in its export dialog",
   act(() => editor.dispatch({ type: "markSaved", record }));
   await act(async () => root.render(page(true)));
   act(() => button("+ Add").click());
-  expect(host.textContent).toContain("GridAssignments_Q2");
+  expect(host.textContent).toContain("Saved in Qualtrics as __js_GridAssignments_Q2");
   expect(await downloadQsf()).toContain('"Field": "__js_GridAssignments_Q2"');
+});
+
+it("shows the fields as Qualtrics records them, and names a field two questions share", async () => {
+  act(() => root.render(page(false)));
+  const { config } = editor.state;
+  await saveSurvey({ ...config, id: "map-1", name: "Map" });
+  await saveSurvey({ ...config, id: "map-2", name: "Map" });
+  await saveSurvey({
+    ...config,
+    id: "reactions",
+    name: "Reactions",
+    experimental: { ...config.experimental!, enabled: true },
+  });
+  await act(async () => root.render(page(true)));
+  for (let i = 0; i < 3; i++) act(() => button("+ Add").click());
+
+  expect(host.textContent).toContain("Saved in Qualtrics as __js_GridAssignments_Map");
+  expect(host.textContent).toContain(
+    "Saved in Qualtrics as __js_GridPrefills_Reactions and __js_GridResponses_Reactions",
+  );
+  expect(host.textContent).toContain('both write to the field "__js_GridAssignments_Map"');
+  expect(button("Download .qsf").disabled).toBe(true);
 });

@@ -103,21 +103,45 @@ it("leaves block-cells mode when the researcher picks a category to place", () =
   expect(buttonByText("Block cells")).toBeDefined();
 });
 
+/** The export dialog's list of result fields, and its manual-paste steps. */
+const exportDialog = () => {
+  const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+  return {
+    dialog,
+    resultFields: () => Array.from(dialog.querySelectorAll("ul code.font-bold")).map((c) => c.textContent),
+    pasteSteps: () => dialog.querySelector("details p")!.textContent,
+  };
+};
+
 it("lets the export dialog give this grid's fields their own ending", () => {
   act(() => root.render(<EditorProvider><PreviewPanel /></EditorProvider>));
-  act(() => Array.from(host.querySelectorAll("button")).find(
-    (button) => button.textContent === "Export to Qualtrics",
-  )!.click());
-  const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("GridAssignments");
+  click("Export to Qualtrics");
+  const { dialog, resultFields, pasteSteps } = exportDialog();
+  expect(resultFields()).toEqual(["__js_GridAssignments"]);
   const input = dialog.querySelector<HTMLInputElement>('input[aria-label="Field name ending"]')!;
   const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   act(() => {
     setValue.call(input, "Q2");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(dialog.textContent).toContain("GridAssignments_Q2");
-  expect(dialog.querySelector("textarea")!.value).toContain('"GridAssignments_Q2"');
+  // Researchers see the names Qualtrics records; the script saves the plain one.
+  expect(resultFields()).toEqual(["__js_GridAssignments_Q2"]);
+  expect(pasteSteps()).toContain("Add an Embedded Data element to your Survey Flow with __js_GridAssignments_Q2,");
+  expect(dialog.querySelector("textarea")!.value).toContain('saveField("GridAssignments_Q2"');
+});
+
+it("names an experiment's recorded fields and says where answers appear", () => {
+  renderPanel();
+  startExperiment("fixed");
+  click("Export to Qualtrics");
+  const { dialog, resultFields, pasteSteps } = exportDialog();
+  expect(resultFields()).toEqual(["__js_GridPrefills", "__js_GridResponses"]);
+  expect(pasteSteps()).toContain("with __js_GridPrefills and __js_GridResponses,");
+  expect(dialog.textContent).toContain(
+    "The grid works in Qualtrics' new survey-taking experience and in the older layouts.",
+  );
+  expect(dialog.textContent).toContain("Answers appear under Data & Analysis with the __js_ names listed above.");
+  expect(dialog.textContent).toContain("add it with Column chooser → Embedded Data");
 });
 
 it("draws the design grid at its designed size until Fit is chosen, and remembers the choice", () => {
