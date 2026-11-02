@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EditorProvider, hasUnsavedChanges, useEditor } from "../EditorContext";
-import { saveSurvey, STORAGE_FULL_MESSAGE } from "../lib/surveysApi";
+import { ExportedSurvey, saveSurvey, STORAGE_FULL_MESSAGE } from "../lib/surveysApi";
 import CombineSurveysPage, { EDITOR_NAME_MISSING } from "./CombineSurveysPage";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -90,8 +90,8 @@ async function downloadQsf(): Promise<string> {
 async function addSurveyWithUnsavedEdits() {
   act(() => root.render(page(false)));
   editConfig({ name: "Map", questionText: "Saved question" });
-  await saveSurvey(editor.state.config);
-  act(() => editor.dispatch({ type: "markSaved" }));
+  const record = await saveSurvey(editor.state.config);
+  act(() => editor.dispatch({ type: "markSaved", record }));
   editConfig({ questionText: "Edited question" });
   await act(async () => root.render(page(true)));
   act(() => button("+ Add").click());
@@ -148,14 +148,68 @@ it("can use the saved version instead, leaving the editor's changes out", async 
   expect(qsf).not.toContain("Edited question");
 });
 
+const KEY = "griddy.localSurveys.v1";
+const stored = () => JSON.parse(window.localStorage.getItem(KEY) ?? "[]") as ExportedSurvey[];
+const dialog = () => host.querySelector<HTMLElement>('[role="dialog"]');
+
+it("asks before replacing a survey renamed in the editor, and can save it as a new one", async () => {
+  await addSurveyWithUnsavedEdits();
+  const field = host.querySelectorAll<HTMLInputElement>('input[type="text"]')[1];
+  type(field, "map_question");
+  editConfig({ name: "Map v2" });
+  const before = window.localStorage.getItem(KEY);
+
+  await act(async () => button("Save the editor's changes").click());
+  expect(dialog()!.textContent).toContain(
+    '"Map" is already saved. Replace it, or keep it and save this as a new survey?',
+  );
+  act(() => button("Cancel").click());
+  expect(dialog()).toBeNull();
+  expect(window.localStorage.getItem(KEY)).toBe(before);
+  expect(host.textContent).toContain(UNSAVED);
+
+  await act(async () => button("Save the editor's changes").click());
+  await act(async () => button("Save as new survey").click());
+  expect(dialog()).toBeNull();
+  expect(stored().map((s) => s.name)).toEqual(["Map", "Map v2"]);
+  expect(stored()[0].config.layout.questionText).toBe("Saved question");
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
+  // The page now uses the new survey, with the field name typed for the old one.
+  expect(host.textContent).not.toContain(UNSAVED);
+  expect(host.querySelectorAll<HTMLInputElement>('input[type="text"]')[1].value).toBe("map_question");
+  expect(button("+ Add")).toBeDefined();
+  const qsf = await downloadQsf();
+  expect(qsf).toContain("Edited question");
+  expect(qsf).not.toContain("Saved question");
+  expect(qsf).toContain("GridAssignments_map_question");
+});
+
+it("asks before replacing a copy saved in another tab, and can replace it", async () => {
+  await addSurveyWithUnsavedEdits();
+  const [record] = stored();
+  window.localStorage.setItem(
+    KEY,
+    JSON.stringify([{ ...record, updated_at: "2099-01-01T00:00:00.000Z" }]),
+  );
+
+  await act(async () => button("Save the editor's changes").click());
+  expect(dialog()!.textContent).toContain('"Map" was saved in another tab or window');
+  await act(async () => button("Replace").click());
+  expect(dialog()).toBeNull();
+  expect(stored()).toHaveLength(1);
+  expect(stored()[0].config.layout.questionText).toBe("Edited question");
+  expect(host.textContent).not.toContain(UNSAVED);
+  expect(button("Download .qsf").disabled).toBe(false);
+});
+
 it("names a grid's fields after the field name ending set in its export dialog", async () => {
   act(() => root.render(page(false)));
   editConfig({ name: "Map" });
   act(() =>
     editor.dispatch({ type: "updateSurvey", patch: { fieldSuffix: "Q2" } }),
   );
-  await saveSurvey(editor.state.config);
-  act(() => editor.dispatch({ type: "markSaved" }));
+  const record = await saveSurvey(editor.state.config);
+  act(() => editor.dispatch({ type: "markSaved", record }));
   await act(async () => root.render(page(true)));
   act(() => button("+ Add").click());
   expect(host.textContent).toContain("GridAssignments_Q2");

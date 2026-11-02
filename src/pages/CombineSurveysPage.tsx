@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import SaveChoiceDialog from "../components/SaveChoiceDialog";
 import { exportSurveys, ExportedSurvey } from "../lib/surveysApi";
-import { MISSING_TITLE_MESSAGE, saveEditorSurvey } from "../lib/saveEditorSurvey";
+import {
+  MISSING_TITLE_MESSAGE,
+  SaveChoice,
+  SaveConflict,
+  saveEditorSurvey,
+} from "../lib/saveEditorSurvey";
 import { findFieldCollision } from "../lib/combineFields";
 import { hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
 import {
@@ -84,6 +90,9 @@ export default function CombineSurveysPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [savingEditor, setSavingEditor] = useState(false);
+  // Set while the dialog asks whether to replace the saved survey.
+  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
+  const saveEditorButton = useRef<HTMLButtonElement>(null);
   // Surveys to download as saved, leaving out the editor's unsaved changes.
   const [savedCopyIds, setSavedCopyIds] = useState<string[]>([]);
 
@@ -150,18 +159,36 @@ export default function CombineSurveysPage() {
 
   // Saving from here keeps the questions, field names and title chosen on
   // this page, which leaving for the editor would reset.
-  const saveEditorChanges = async () => {
+  const saveEditorChanges = async (choice?: SaveChoice) => {
     setSavingEditor(true);
     setError(null);
+    const openId = editorState.config.id;
     try {
-      // Reload the list before the editor counts as saved, so Download never
-      // turns on while the list still holds the old copy.
-      await saveEditorSurvey(
-        editorState.config,
-        () => dispatch({ type: "markSaved" }),
-        async () => setSurveys((await exportSurveys()).surveys),
+      const found = await saveEditorSurvey(
+        editorState,
+        (record) => {
+          if (record.id !== openId) {
+            // Saved as a new survey: it takes the old one's place here,
+            // since the researcher chose the editor's version.
+            setSelectedIds((prev) => prev.map((id) => (id === openId ? record.id : id)));
+            setFieldOverrides((prev) =>
+              prev[openId] === undefined ? prev : { ...prev, [record.id]: prev[openId] },
+            );
+          }
+          dispatch({ type: "markSaved", record });
+        },
+        {
+          choice,
+          // Reload the list before the editor counts as saved, so Download
+          // never turns on while the list still holds the old copy.
+          beforeMarkSaved: async () => setSurveys((await exportSurveys()).surveys),
+        },
       );
+      // A survey renamed or saved in another tab since opens the dialog; a
+      // finished save closes it.
+      setSaveConflict(found);
     } catch (e) {
+      setSaveConflict(null);
       const message = (e as Error).message;
       // This page has its own survey name box; say which name is missing.
       setError(message === MISSING_TITLE_MESSAGE ? EDITOR_NAME_MISSING : message);
@@ -376,8 +403,9 @@ export default function CombineSurveysPage() {
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-sm font-semibold text-accent">{unsavedEditsError}</p>
               <button
+                ref={saveEditorButton}
                 type="button"
-                onClick={saveEditorChanges}
+                onClick={() => saveEditorChanges()}
                 disabled={savingEditor}
                 className="rounded-md bg-accent-tint px-3 py-1.5 text-sm font-semibold text-accent hover:opacity-90 disabled:opacity-50"
               >
@@ -394,6 +422,15 @@ export default function CombineSurveysPage() {
           )}
           {fieldCollisionError && (
             <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>
+          )}
+          {saveConflict && (
+            <SaveChoiceDialog
+              conflict={saveConflict}
+              returnFocusTo={saveEditorButton}
+              onSaveAsNew={() => saveEditorChanges("saveAsNew")}
+              onReplace={() => saveEditorChanges("replace")}
+              onCancel={() => setSaveConflict(null)}
+            />
           )}
         </div>
 

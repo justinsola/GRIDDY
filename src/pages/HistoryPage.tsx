@@ -2,6 +2,7 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   deleteSurvey,
+  duplicateSurvey,
   exportSurveys,
   importSurveys,
   listSurveys,
@@ -66,9 +67,9 @@ export default function HistoryPage() {
       return;
     }
     try {
-      const config = await loadSurvey(id);
-      dispatch({ type: "setConfig", config });
-      dispatch({ type: "markSaved" });
+      const survey = await loadSurvey(id);
+      dispatch({ type: "setConfig", config: survey.config });
+      dispatch({ type: "markSaved", record: survey });
       navigate("/");
     } catch (e) {
       setError((e as Error).message);
@@ -140,6 +141,24 @@ export default function HistoryPage() {
       }
     } finally {
       setTransferring(false);
+    }
+  };
+
+  const handleDuplicate = async (id: string) => {
+    const name = surveys.find((s) => s.id === id)?.name ?? "";
+    const answer = window.prompt(`Name the copy of "${name}":`, `${name} (copy)`);
+    if (answer === null) return;
+    setError(null);
+    setNotice(null);
+    if (!answer.trim()) {
+      setError("Please enter a name for the copy.");
+      return;
+    }
+    try {
+      await duplicateSurvey(id, answer.trim());
+      await refreshSurveys();
+    } catch (e) {
+      setError((e as Error).message);
     }
   };
 
@@ -243,6 +262,13 @@ export default function HistoryPage() {
                   className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
                 >
                   Open
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDuplicate(s.id)}
+                  className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
+                >
+                  Duplicate
                 </button>
                 <button
                   type="button"

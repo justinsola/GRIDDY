@@ -30,6 +30,7 @@ export interface ImportSurveysResult {
   updatedCount: number;
   /** Surveys already here whose local copy was newer than the backup's, so it was kept. */
   keptNewerCount: number;
+  /** Surveys already here exactly as the backup has them. */
   skippedDuplicateCount: number;
 }
 
@@ -122,7 +123,8 @@ export function surveyFingerprint(name: string, config: GridConfig): string {
   });
 }
 
-export async function saveSurvey(config: GridConfig): Promise<void> {
+/** Stores the survey under its id, replacing any saved survey with that id. */
+export async function saveSurvey(config: GridConfig): Promise<SurveyMeta> {
   const now = new Date().toISOString();
   const surveys = readLocalSurveys();
   const existingIndex = surveys.findIndex((survey) => survey.id === config.id);
@@ -142,6 +144,8 @@ export async function saveSurvey(config: GridConfig): Promise<void> {
   }
 
   writeLocalSurveys(surveys);
+  const { id, name, created_at, updated_at } = record;
+  return { id, name, created_at, updated_at };
 }
 
 export async function listSurveys(): Promise<SurveyMeta[]> {
@@ -155,12 +159,25 @@ export async function listSurveys(): Promise<SurveyMeta[]> {
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
 
-export async function loadSurvey(id: string): Promise<GridConfig> {
-  const survey = readLocalSurveys().find((item) => item.id === id);
+/** The saved survey with this id, or null when there is none: it was never
+ * saved, or it was deleted, perhaps in another tab. */
+export async function findSurvey(id: string): Promise<ExportedSurvey | null> {
+  return readLocalSurveys().find((item) => item.id === id) ?? null;
+}
+
+/** The saved survey with this id, with its name and save times. */
+export async function loadSurvey(id: string): Promise<ExportedSurvey> {
+  const survey = await findSurvey(id);
   if (!survey) {
     throw new Error("Survey not found in local storage.");
   }
-  return survey.config;
+  return survey;
+}
+
+/** Saves a copy of a saved survey as a new survey with its own id. */
+export async function duplicateSurvey(id: string, name: string): Promise<SurveyMeta> {
+  const { config } = await loadSurvey(id);
+  return saveSurvey({ ...config, id: crypto.randomUUID(), name });
 }
 
 export async function deleteSurvey(id: string): Promise<void> {
@@ -190,63 +207,38 @@ export async function importSurveys(
     return { importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 0 };
   }
 
-  const existingSurveys = readLocalSurveys();
-  const existingById = new Map<string, string>();
-  const existingFingerprints = new Set<string>();
-
-  for (const survey of existingSurveys) {
-    const fp = surveyFingerprint(survey.name, survey.config);
-    existingById.set(survey.id, fp);
-    existingFingerprints.add(fp);
-  }
-
-  const seenInImport = new Set<string>();
-  const nextById = new Map(existingSurveys.map((survey) => [survey.id, survey]));
+  // Surveys are told apart by id, not by content, so a copy made with
+  // Duplicate or "Save as new survey" comes back from a backup even when
+  // its name and content match another survey's.
+  const nextById = new Map(readLocalSurveys().map((survey) => [survey.id, survey]));
   let importedCount = 0;
   let updatedCount = 0;
   let keptNewerCount = 0;
   let skippedDuplicateCount = 0;
 
   for (const survey of surveys) {
-    const fp = surveyFingerprint(survey.name, survey.config);
-
-    if (seenInImport.has(fp)) {
-      skippedDuplicateCount++;
+    const local = nextById.get(survey.id);
+    if (!local) {
+      nextById.set(survey.id, survey);
+      importedCount++;
       continue;
     }
-    seenInImport.add(fp);
 
-    if (existingById.has(survey.id) && existingById.get(survey.id) === fp) {
+    if (surveyFingerprint(local.name, local.config) === surveyFingerprint(survey.name, survey.config)) {
       skippedDuplicateCount++;
       continue;
     }
 
     // The same survey with different content: keep whichever copy was
     // edited last, so restoring an old backup cannot overwrite newer work.
-    const local = nextById.get(survey.id);
-    if (local) {
-      const localTime = Date.parse(local.updated_at) || 0;
-      const backupTime = Date.parse(survey.updated_at) || 0;
-      if (localTime >= backupTime) {
-        keptNewerCount++;
-        continue;
-      }
-      nextById.set(survey.id, survey);
-      existingById.set(survey.id, fp);
-      existingFingerprints.add(fp);
-      updatedCount++;
+    const localTime = Date.parse(local.updated_at) || 0;
+    const backupTime = Date.parse(survey.updated_at) || 0;
+    if (localTime >= backupTime) {
+      keptNewerCount++;
       continue;
     }
-
-    if (!existingById.has(survey.id) && existingFingerprints.has(fp)) {
-      skippedDuplicateCount++;
-      continue;
-    }
-
     nextById.set(survey.id, survey);
-    existingById.set(survey.id, fp);
-    existingFingerprints.add(fp);
-    importedCount++;
+    updatedCount++;
   }
 
   writeLocalSurveys(Array.from(nextById.values()));

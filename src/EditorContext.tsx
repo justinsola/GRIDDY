@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import { repairGridSize } from "./lib/gridSize";
+import type { SurveyMeta } from "./lib/surveysApi";
 import {
   CategoryMeta,
   ExperimentalConfig,
@@ -216,11 +217,19 @@ export function normalizeConfig(config: GridConfig): GridConfig {
   };
 }
 
+/** A saved survey as the editor last opened or saved it: its id, the name it
+ * had then, and when it was stored. */
+export type SavedRecord = Pick<SurveyMeta, "id" | "name" | "updated_at">;
+
 interface EditorState {
   config: GridConfig;
   savedSurveyId: string | null;
   /** The config as last saved, opened or started, to tell whether there are unsaved edits. */
   savedSnapshot: string;
+  /** The survey as last opened or saved; null until it is saved. Saving
+   * compares it with the survey now and with the stored copy, to ask before
+   * replacing a renamed survey or a copy saved in another tab since. */
+  savedRecord: SavedRecord | null;
 }
 
 type EditorAction =
@@ -229,7 +238,8 @@ type EditorAction =
   | { type: "updateTuning"; patch: Partial<TuningConfig> }
   | { type: "updateSurvey"; patch: Partial<SurveyConfig> }
   | { type: "updateExperimental"; patch: Partial<ExperimentalConfig> }
-  | { type: "markSaved" }
+  /** The config is now stored as `record`: just saved, or just opened. */
+  | { type: "markSaved"; record: Pick<SurveyMeta, "id" | "updated_at"> }
   | { type: "newSurvey" };
 
 const EditorContext = createContext<
@@ -285,11 +295,21 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
   switch (action.type) {
     case "setConfig":
       return { ...state, config: normalizeConfig(action.config) };
-    case "markSaved":
-      return { ...state, savedSurveyId: state.config.id, savedSnapshot: JSON.stringify(state.config) };
+    case "markSaved": {
+      // Saved as a new survey, the editor's survey takes the new record's id.
+      const { id, updated_at } = action.record;
+      const config = id === state.config.id ? state.config : { ...state.config, id };
+      return {
+        ...state,
+        config,
+        savedSurveyId: id,
+        savedSnapshot: JSON.stringify(config),
+        savedRecord: { id, name: config.name, updated_at },
+      };
+    }
     case "newSurvey": {
       const config = createDefaultConfig();
-      return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config) };
+      return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config), savedRecord: null };
     }
     case "updateLayout": {
       const mergedLayout = { ...state.config.layout, ...action.patch };
@@ -404,7 +424,7 @@ export function discardChangesMessage(name: string): string {
 
 function initialEditorState(): EditorState {
   const config = createDefaultConfig();
-  return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config) };
+  return { config, savedSurveyId: null, savedSnapshot: JSON.stringify(config), savedRecord: null };
 }
 
 export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({

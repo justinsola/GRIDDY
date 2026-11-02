@@ -4,6 +4,10 @@ import {
   surveyFingerprint,
   importSurveys,
   describeImport,
+  duplicateSurvey,
+  exportSurveys,
+  ExportedSurvey,
+  findSurvey,
   saveSurvey,
   STORAGE_FULL_MESSAGE,
 } from "./surveysApi";
@@ -178,6 +182,30 @@ describe("importSurveys", () => {
     expect(JSON.parse(window.localStorage.getItem(KEY)!)[0].config.layout.rows).toBe(5);
   });
 
+  it("skips a survey that is already here as the backup has it", async () => {
+    window.localStorage.setItem(KEY, JSON.stringify([stored("2026-10-15T12:00:00.000Z", 3)]));
+    const result = await importSurveys([stored("2026-10-15T12:00:00.000Z", 3)]);
+    expect(result).toEqual({ importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 1 });
+  });
+
+  it("brings back a copy whose name and content match another survey's", async () => {
+    // Duplicate, or "Save as new survey", can leave two surveys that differ
+    // only in id. Both come back from a backup, into a browser that has the
+    // original or into an empty one.
+    const original = stored("2026-10-15T12:00:00.000Z", 3);
+    const copy = { ...original, id: "s2", config: { ...original.config, id: "s2" } };
+    window.localStorage.setItem(KEY, JSON.stringify([original]));
+    expect(await importSurveys([original, copy])).toEqual({
+      importedCount: 1,
+      updatedCount: 0,
+      keptNewerCount: 0,
+      skippedDuplicateCount: 1,
+    });
+    window.localStorage.clear();
+    expect((await importSurveys([original, copy])).importedCount).toBe(2);
+    expect((await exportSurveys()).surveys.map((s) => s.id).sort()).toEqual(["s1", "s2"]);
+  });
+
   it("tells the researcher what happened", () => {
     expect(
       describeImport({ importedCount: 2, updatedCount: 0, keptNewerCount: 1, skippedDuplicateCount: 1 }),
@@ -185,6 +213,33 @@ describe("importSurveys", () => {
     expect(
       describeImport({ importedCount: 0, updatedCount: 0, keptNewerCount: 0, skippedDuplicateCount: 0 }),
     ).toBe("Backup imported, but it did not contain any surveys.");
+  });
+});
+
+describe("saving and duplicating", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("returns the stored survey's id, name and save times", async () => {
+    const meta = await saveSurvey(makeConfig({ id: "s1", name: "Map" }));
+    const record = (await findSurvey("s1")) as ExportedSurvey;
+    expect(meta).toEqual({
+      id: "s1",
+      name: "Map",
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+    });
+    expect(await findSurvey("missing")).toBeNull();
+  });
+
+  it("duplicates a survey under a new id and the chosen name, leaving the original as it was", async () => {
+    await saveSurvey(makeConfig({ id: "s1", name: "Map" }));
+    const original = await findSurvey("s1");
+    const meta = await duplicateSurvey("s1", "Map (copy)");
+    expect(meta.id).not.toBe("s1");
+    expect(meta.name).toBe("Map (copy)");
+    const copy = (await findSurvey(meta.id)) as ExportedSurvey;
+    expect(copy.config).toEqual(makeConfig({ id: meta.id, name: "Map (copy)" }));
+    expect(await findSurvey("s1")).toEqual(original);
   });
 });
 

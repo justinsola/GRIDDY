@@ -84,8 +84,10 @@ function makeBaseConfig(): GridConfig {
 
 function makeState(config?: GridConfig) {
   const c = config ?? makeBaseConfig();
-  return { config: c, savedSurveyId: null, savedSnapshot: JSON.stringify(c) };
+  return { config: c, savedSurveyId: null, savedSnapshot: JSON.stringify(c), savedRecord: null };
 }
+
+const SAVED_AT = "2026-11-01T12:00:00.000Z";
 
 // ─── syncCategoryMeta ─────────────────────────────────────────────────────────
 
@@ -166,7 +168,10 @@ describe("editorReducer", () => {
   });
 
   it("markSaved: sets savedSurveyId to current config id", () => {
-    const state = editorReducer(makeState(), { type: "markSaved" });
+    const state = editorReducer(makeState(), {
+      type: "markSaved",
+      record: { id: "base-id", updated_at: SAVED_AT },
+    });
     expect(state.savedSurveyId).toBe("base-id");
   });
 
@@ -404,7 +409,10 @@ describe("unsaved changes", () => {
     expect(hasUnsavedChanges(state)).toBe(false);
     state = editorReducer(state, { type: "updateLayout", patch: { rows: 5 } });
     expect(hasUnsavedChanges(state)).toBe(true);
-    state = editorReducer(state, { type: "markSaved" });
+    state = editorReducer(state, {
+      type: "markSaved",
+      record: { id: state.config.id, updated_at: SAVED_AT },
+    });
     expect(hasUnsavedChanges(state)).toBe(false);
   });
 
@@ -419,6 +427,49 @@ describe("unsaved changes", () => {
       config: { ...state.config, name: "Renamed" },
     });
     expect(hasUnsavedChanges(renamed)).toBe(true);
+  });
+});
+
+// ─── The saved record, to ask before replacing a saved survey ─────────────────
+
+describe("saved record", () => {
+  it("remembers the survey's id, its name then and when it was stored", () => {
+    const state = editorReducer(makeState(), {
+      type: "markSaved",
+      record: { id: "base-id", updated_at: SAVED_AT },
+    });
+    expect(state.savedRecord).toEqual({ id: "base-id", name: "Base", updated_at: SAVED_AT });
+  });
+
+  it("keeps the name it was saved with when the survey is renamed", () => {
+    let state = editorReducer(makeState(), {
+      type: "markSaved",
+      record: { id: "base-id", updated_at: SAVED_AT },
+    });
+    state = editorReducer(state, { type: "setConfig", config: { ...state.config, name: "Base v2" } });
+    expect(state.config.name).toBe("Base v2");
+    expect(state.savedRecord?.name).toBe("Base");
+  });
+
+  it("gives a survey saved as a new one the new id, and counts it as saved", () => {
+    let state = editorReducer(makeState(normalizeConfig(makeBaseConfig())), {
+      type: "updateLayout",
+      patch: { rows: 4 },
+    });
+    state = editorReducer(state, { type: "markSaved", record: { id: "copy-id", updated_at: SAVED_AT } });
+    expect(state.config.id).toBe("copy-id");
+    expect(state.config.layout.rows).toBe(4);
+    expect(state.savedSurveyId).toBe("copy-id");
+    expect(state.savedRecord).toEqual({ id: "copy-id", name: "Base", updated_at: SAVED_AT });
+    expect(hasUnsavedChanges(state)).toBe(false);
+  });
+
+  it("is forgotten by New", () => {
+    const saved = editorReducer(makeState(), {
+      type: "markSaved",
+      record: { id: "base-id", updated_at: SAVED_AT },
+    });
+    expect(editorReducer(saved, { type: "newSurvey" }).savedRecord).toBeNull();
   });
 });
 
