@@ -2,8 +2,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { EditorProvider, useEditor } from "../EditorContext";
-import { ExportedSurvey, saveSurvey } from "../lib/surveysApi";
+import { EditorProvider, hasUnsavedChanges, normalizeConfig, useEditor } from "../EditorContext";
+import type { GridConfig } from "../grid-types";
+import { gridPixelSize } from "../lib/gridSize";
+import { ExportedSurvey, importSurveys, saveSurvey } from "../lib/surveysApi";
 import HistoryPage from "./HistoryPage";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -87,4 +89,50 @@ it("remembers an opened survey's name and save time, to ask before replacing it"
   await act(async () => rowButton("Map", "Open")!.click());
   expect(editor.state.config.id).toBe(map.id);
   expect(editor.state.savedRecord).toEqual({ id: map.id, name: "Map", updated_at: map.updated_at });
+});
+
+/** A 4 × 5 survey as saved before November 2026, when every grid filled a
+ * fixed frame of 550 × 550 px. */
+function savedBeforeCellSizes(base: GridConfig, id: string, name: string): GridConfig {
+  return {
+    ...base,
+    id,
+    name,
+    layout: { ...base.layout, rows: 4, cols: 5 },
+    tuning: {
+      gridGap: 10,
+      gridPadding: 0,
+      labelFontSizeRem: 1,
+      cellWidth: 100,
+      cellHeight: 120,
+      previewWidth: 550,
+      previewHeight: 550,
+    },
+  };
+}
+
+it("opens a survey saved before cell sizes at the size it had, with nothing to save", async () => {
+  act(() => root.render(page(false)));
+  const old = savedBeforeCellSizes(editor.state.config, "older-survey", "Old map");
+  await saveSurvey(old);
+  await act(async () => root.render(page(true)));
+  await act(async () => rowButton("Old map", "Open")!.click());
+  expect(editor.state.config.id).toBe("older-survey");
+  expect(editor.state.config.tuning).toMatchObject({ cellWidth: 102, cellHeight: 130, sizing: "cells" });
+  expect(gridPixelSize(editor.state.config)).toEqual({ width: 550, height: 550 });
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
+  // The stored copy is left as it was until the survey is saved again.
+  expect(stored()[0].config).toEqual(old);
+});
+
+it("opens a survey from an older backup, imported later, migrated the same way", async () => {
+  act(() => root.render(page(false)));
+  const old = savedBeforeCellSizes(editor.state.config, "backed-up", "Backed-up map");
+  const at = "2026-10-20T10:00:00.000Z";
+  await importSurveys([{ id: old.id, name: old.name, created_at: at, updated_at: at, config: old }]);
+  await act(async () => root.render(page(true)));
+  await act(async () => rowButton("Backed-up map", "Open")!.click());
+  expect(editor.state.config).toEqual(normalizeConfig(old));
+  expect(gridPixelSize(editor.state.config)).toEqual({ width: 550, height: 550 });
+  expect(hasUnsavedChanges(editor.state)).toBe(false);
 });

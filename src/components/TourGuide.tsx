@@ -12,7 +12,7 @@ const STEPS: Step[] = [
   {
     target: '[data-tour="section-question-grid"]',
     title: "Question & grid",
-    content: "Write the question text and set the grid's row/column dimensions.",
+    content: "Write the question text and set the grid's rows, columns and cell size. The grid grows with every row and column, and has that size on every screen.",
     placement: "right",
   },
   {

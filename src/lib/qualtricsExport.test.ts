@@ -14,6 +14,7 @@ import {
   singleGridFieldNames,
 } from "./qualtricsExport";
 import { GridConfig } from "../grid-types";
+import { gridPixelSize } from "./gridSize";
 
 function makeExperimentalConfig(
   selectionMode: "paint" | "dropdown" | "dragdrop",
@@ -596,6 +597,48 @@ describe("blocked cells in the exported grid", () => {
     expect(js).toContain("var isBlocked = !isCenter && !!blockedCells[key];");
     expect(js).toContain('selectionMode === "paint" && !isBlocked');
     expect(js).toContain('selectionMode === "dragdrop" && !isBlocked');
+  });
+});
+
+// ─── The grid's size ──────────────────────────────────────────────────────────
+
+describe("the grid's size in the export", () => {
+  // 60 × 50 px cells, 4 px apart and 8 px from the border.
+  const sizedByCells = (layout: Partial<GridConfig["layout"]> = {}): GridConfig => {
+    const base = makeConfig();
+    return {
+      ...base,
+      layout: { ...base.layout, ...layout },
+      tuning: { gridGap: 4, gridPadding: 8, labelFontSizeRem: 0.75, cellWidth: 60, cellHeight: 50, sizing: "cells" },
+    };
+  };
+  const frameOf = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>("[data-griddy-scroller]")!.firstElementChild as HTMLElement;
+
+  it("sizes the grid's frame with the size the editor works out from its cells", () => {
+    for (const [rows, cols] of [[3, 3], [2, 7], [10, 1]]) {
+      const config = sizedByCells({ rows, cols });
+      const size = gridPixelSize(config);
+      const frame = frameOf(runSnippet(config));
+      expect(frame.style.width).toBe(`${size.width}px`);
+      expect(frame.style.height).toBe(`${size.height}px`);
+    }
+    expect(gridPixelSize(sizedByCells())).toEqual({ width: 204, height: 174 });
+    // The .qsf carries the same script.
+    const question = JSON.parse(buildQualtricsQsfForConfig(sizedByCells()))
+      .SurveyElements.find((e: { Element: string }) => e.Element === "SQ");
+    expect(question.Payload.QuestionJS).toContain('"gridWidth": 204');
+    expect(question.Payload.QuestionJS).toContain('"gridHeight": 174');
+  });
+
+  it("keeps a survey saved before cell sizes at the size it had", () => {
+    // makeConfig's grid filled a fixed frame of 360 × 360 px.
+    const frame = frameOf(runSnippet(makeConfig()));
+    expect(frame.style.width).toBe("360px");
+    expect(frame.style.height).toBe("360px");
+    const js = buildQualtricsSnippet(makeConfig());
+    expect(js).toContain('"cellWidth": 112');
+    expect(js).not.toContain('"previewWidth"');
   });
 });
 

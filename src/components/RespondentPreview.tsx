@@ -53,7 +53,7 @@ new ResizeObserver(function () {
 
 interface RespondentPreviewProps {
   snippet: string;
-  /** The grid's designed width in pixels (tuning.previewWidth). */
+  /** The grid's designed width in pixels (gridPixelSize). */
   gridWidth: number;
   /** How the page is shown. The editor keeps the choice, so it lasts while
    * the design preview is shown, even when this browser cannot store it. */

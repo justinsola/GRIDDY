@@ -1,5 +1,17 @@
 import React, { useEffect, useId, useState } from "react";
-import { GRID_SIZE_MESSAGE, parseGridSize } from "../lib/gridSize";
+import {
+  CELL_SIZE_MESSAGE,
+  GRID_SIZE_MESSAGE,
+  MAX_CELL_SIZE,
+  MIN_CELL_SIZE,
+  MIN_TAP_SIZE,
+  PHONE_WIDTH,
+  backgroundImageMaxDim,
+  gridPixelSize,
+  gridSizeText,
+  parseCellSize,
+  parseGridSize,
+} from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
 import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
@@ -237,18 +249,34 @@ function chipItemsToMeta(items: ChipItem[]): Record<string, CategoryMeta> {
 const QuestionGridForm: React.FC = () => {
   const { state: { config }, dispatch } = useEditor();
   const layout = config.layout;
+  const tuning = config.tuning;
   const questionHintId = useId();
+  const cellSizeCaptionId = useId();
+  const gridSizeNotesId = useId();
+
+  // The grid's size follows from its cells, rows and columns.
+  const gridSize = gridPixelSize(config);
 
   const [rowsInput, setRowsInput] = useState(String(layout.rows));
   const [colsInput, setColsInput] = useState(String(layout.cols));
   const [rowsWarn, setRowsWarn] = useState(false);
   const [colsWarn, setColsWarn] = useState(false);
+  // A survey saved before cell sizes can have fractional cells: the boxes
+  // show them rounded, and they stay as they are until edited.
+  const [cellWidthInput, setCellWidthInput] = useState(String(Math.round(tuning.cellWidth)));
+  const [cellHeightInput, setCellHeightInput] = useState(String(Math.round(tuning.cellHeight)));
+  const [cellWidthWarn, setCellWidthWarn] = useState(false);
+  const [cellHeightWarn, setCellHeightWarn] = useState(false);
 
   useEffect(() => {
     setRowsInput(String(layout.rows));
     setColsInput(String(layout.cols));
     setRowsWarn(false);
     setColsWarn(false);
+    setCellWidthInput(String(Math.round(tuning.cellWidth)));
+    setCellHeightInput(String(Math.round(tuning.cellHeight)));
+    setCellWidthWarn(false);
+    setCellHeightWarn(false);
     // Only resync the inputs when a different survey is loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.id]);
@@ -272,6 +300,23 @@ const QuestionGridForm: React.FC = () => {
     const v = parseGridSize(e.target.value);
     setColsWarn(v === null);
     if (v !== null) update({ cols: v });
+  };
+
+  // Likewise, only a whole number of pixels from 20 to 600 changes a cell.
+  const handleCellWidth = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCellWidthInput(e.target.value);
+    if (e.target.value === "") return;
+    const v = parseCellSize(e.target.value);
+    setCellWidthWarn(v === null);
+    if (v !== null) dispatch({ type: "updateTuning", patch: { cellWidth: v } });
+  };
+
+  const handleCellHeight = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCellHeightInput(e.target.value);
+    if (e.target.value === "") return;
+    const v = parseCellSize(e.target.value);
+    setCellHeightWarn(v === null);
+    if (v !== null) dispatch({ type: "updateTuning", patch: { cellHeight: v } });
   };
 
   const inputCls =
@@ -347,6 +392,69 @@ const QuestionGridForm: React.FC = () => {
         </div>
       </div>
 
+      <div>
+        <span id={cellSizeCaptionId} className="text-[10px] font-bold tracking-widest text-ink-faint">
+          CELL SIZE
+        </span>
+        <div role="group" aria-labelledby={cellSizeCaptionId} className="mt-1 grid grid-cols-2 gap-3">
+          <div>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-xs text-ink-muted">Width (px)</span>
+              <input
+                type="number"
+                min={MIN_CELL_SIZE}
+                max={MAX_CELL_SIZE}
+                step={1}
+                aria-label="Cell width in pixels"
+                aria-describedby={gridSizeNotesId}
+                className={inputCls}
+                value={cellWidthInput}
+                onChange={handleCellWidth}
+                onBlur={() => {
+                  if (cellWidthWarn || !cellWidthInput) {
+                    setCellWidthInput(String(Math.round(tuning.cellWidth)));
+                    setCellWidthWarn(false);
+                  }
+                }}
+              />
+            </label>
+            {cellWidthWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{CELL_SIZE_MESSAGE}</p>}
+          </div>
+          <div>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-xs text-ink-muted">Height (px)</span>
+              <input
+                type="number"
+                min={MIN_CELL_SIZE}
+                max={MAX_CELL_SIZE}
+                step={1}
+                aria-label="Cell height in pixels"
+                aria-describedby={gridSizeNotesId}
+                className={inputCls}
+                value={cellHeightInput}
+                onChange={handleCellHeight}
+                onBlur={() => {
+                  if (cellHeightWarn || !cellHeightInput) {
+                    setCellHeightInput(String(Math.round(tuning.cellHeight)));
+                    setCellHeightWarn(false);
+                  }
+                }}
+              />
+            </label>
+            {cellHeightWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{CELL_SIZE_MESSAGE}</p>}
+          </div>
+        </div>
+        <div id={gridSizeNotesId} className="mt-1.5 flex flex-col gap-0.5 text-xs">
+          <p className="text-ink-muted">The grid is {gridSizeText(gridSize)}.</p>
+          {gridSize.width > PHONE_WIDTH && (
+            <p className="text-amber-700">Wider than a phone screen: respondents on phones scroll sideways.</p>
+          )}
+          {Math.min(tuning.cellWidth, tuning.cellHeight) < MIN_TAP_SIZE && (
+            <p className="text-amber-700">Cells smaller than {MIN_TAP_SIZE} px are hard to tap on a phone.</p>
+          )}
+        </div>
+      </div>
+
       <label className="flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
@@ -382,7 +490,7 @@ const QuestionGridForm: React.FC = () => {
           onChange={(v) => update({ backgroundImageUrl: v })}
           // The background fills the whole grid frame, so keep enough pixels
           // for it to stay sharp on high-density screens.
-          maxDim={2 * Math.max(config.tuning.previewWidth, config.tuning.previewHeight)}
+          maxDim={backgroundImageMaxDim(gridSize)}
         />
       </div>
 

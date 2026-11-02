@@ -7,7 +7,8 @@ import {
   encodeNamesCsv,
   splitCsvPreservingBlanks,
 } from "./EditorContext";
-import type { GridConfig } from "./grid-types";
+import type { GridConfig, TuningConfig } from "./grid-types";
+import { defaultTuning, gridPixelSize } from "./lib/gridSize";
 import type { RespondentTexts } from "./lib/respondentTexts";
 
 // ─── encodeNamesCsv / splitCsvPreservingBlanks ─────────────────────────────────
@@ -599,5 +600,115 @@ describe("normalizeConfig and the words shown to respondents", () => {
     const once = normalizeConfig(withTexts({ next: "Siguiente", junk: "x" }));
     expect(normalizeConfig(once)).toEqual(once);
     expect(JSON.stringify(normalizeConfig(once))).toBe(JSON.stringify(once));
+  });
+});
+
+// ─── The grid's size: cells instead of a fixed frame ──────────────────────────
+
+describe("the grid's size comes from its cells", () => {
+  /** A survey as saved before November 2026: its grid filled a fixed frame
+   * of 550 × 550 px, and the cell sizes it stored were not used. */
+  function savedBefore(rows: number, cols: number, tuning: Partial<TuningConfig> = {}): GridConfig {
+    const base = makeBaseConfig();
+    return {
+      ...base,
+      layout: { ...base.layout, rows, cols },
+      tuning: {
+        gridGap: 10,
+        gridPadding: 0,
+        labelFontSizeRem: 1,
+        cellWidth: 100,
+        cellHeight: 120,
+        previewWidth: 550,
+        previewHeight: 550,
+        ...tuning,
+      },
+    };
+  }
+
+  it("gives a new survey cells of 100 × 100 px, so its 3 × 3 grid is 320 × 320 px", () => {
+    const { config } = editorReducer(makeState(), { type: "newSurvey" });
+    expect(config.tuning).toEqual(defaultTuning());
+    expect(config.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, sizing: "cells" });
+    expect("previewWidth" in config.tuning).toBe(false);
+    expect(gridPixelSize(config)).toEqual({ width: 320, height: 320 });
+  });
+
+  it("keeps the exact pixel size of a survey saved with a fixed frame", () => {
+    for (const [rows, cols] of [[3, 3], [10, 10], [2, 5], [4, 7]]) {
+      const out = normalizeConfig(savedBefore(rows, cols));
+      expect(out.tuning.sizing).toBe("cells");
+      expect(gridPixelSize(out)).toEqual({ width: 550, height: 550 });
+    }
+    // Each cell gets its share of the frame, unrounded.
+    expect(normalizeConfig(savedBefore(3, 3)).tuning).toMatchObject({ cellWidth: 530 / 3, cellHeight: 530 / 3 });
+    expect(normalizeConfig(savedBefore(10, 10)).tuning).toMatchObject({ cellWidth: 46, cellHeight: 46 });
+    expect(normalizeConfig(savedBefore(2, 5)).tuning).toMatchObject({ cellWidth: 102, cellHeight: 270 });
+  });
+
+  it("keeps the pixel size with another gap, padding or frame", () => {
+    const out = normalizeConfig(
+      savedBefore(3, 4, { gridGap: 4, gridPadding: 8, previewWidth: 360, previewHeight: 300 }),
+    );
+    expect(out.tuning).toMatchObject({ gridGap: 4, gridPadding: 8, cellWidth: 83, cellHeight: 92 });
+    expect(gridPixelSize(out)).toEqual({ width: 360, height: 300 });
+  });
+
+  it("drops the fixed frame and changes nothing the second time", () => {
+    const once = normalizeConfig(savedBefore(3, 3));
+    expect("previewWidth" in once.tuning).toBe(false);
+    expect("previewHeight" in once.tuning).toBe(false);
+    expect(normalizeConfig(once)).toEqual(once);
+    expect(JSON.stringify(normalizeConfig(once))).toBe(JSON.stringify(once));
+    expect(normalizeConfig(once).tuning).toBe(once.tuning);
+  });
+
+  it("uses a new survey's sizes for numbers that are missing or unusable", () => {
+    for (const frame of [undefined, Number.NaN, 0, -550, "550"]) {
+      const out = normalizeConfig(savedBefore(3, 3, { previewWidth: frame as number, previewHeight: frame as number }));
+      expect(out.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, sizing: "cells" });
+    }
+    const repaired = normalizeConfig({
+      ...makeBaseConfig(),
+      tuning: { ...defaultTuning(), cellWidth: Number.NaN, gridGap: -1 },
+    });
+    expect(repaired.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, gridGap: 10 });
+    const noTuning = { ...makeBaseConfig(), tuning: undefined as unknown as TuningConfig };
+    expect(normalizeConfig(noTuning).tuning).toEqual(defaultTuning());
+  });
+
+  it("migrates a survey whose rows or columns were repaired from the repaired size", () => {
+    // 0 rows and 2.4 columns become 1 row and 2 columns.
+    const out = normalizeConfig(savedBefore(0, 2.4));
+    expect(out.tuning).toMatchObject({ cellWidth: 270, cellHeight: 550 });
+    expect(gridPixelSize(out)).toEqual({ width: 550, height: 550 });
+  });
+
+  it("grows the grid by one cell and one gap for each column added", () => {
+    let state = editorReducer(makeState(), { type: "newSurvey" });
+    state = editorReducer(state, { type: "updateLayout", patch: { cols: 4 } });
+    expect(gridPixelSize(state.config)).toEqual({ width: 430, height: 320 });
+    state = editorReducer(state, { type: "updateTuning", patch: { cellWidth: 60 } });
+    expect(gridPixelSize(state.config)).toEqual({ width: 270, height: 320 });
+
+    // A migrated survey's cells keep their size as the grid grows.
+    const old = editorReducer(makeState(normalizeConfig(savedBefore(3, 3))), {
+      type: "updateLayout",
+      patch: { cols: 4 },
+    });
+    expect(gridPixelSize(old.config).width).toBeCloseTo(550 + 530 / 3 + 10, 5);
+    expect(gridPixelSize(old.config).height).toBe(550);
+  });
+
+  it("opens a survey saved with a fixed frame with no unsaved changes", () => {
+    let state = editorReducer(makeState(), { type: "newSurvey" });
+    // What My surveys does to open a saved survey.
+    state = editorReducer(state, { type: "setConfig", config: savedBefore(3, 3) });
+    state = editorReducer(state, { type: "markSaved", record: { id: "base-id", updated_at: SAVED_AT } });
+    expect(hasUnsavedChanges(state)).toBe(false);
+    expect(gridPixelSize(state.config)).toEqual({ width: 550, height: 550 });
+    // Typing in the study name box runs normalizeConfig again; it changes nothing more.
+    const again = editorReducer(state, { type: "setConfig", config: { ...state.config } });
+    expect(hasUnsavedChanges(again)).toBe(false);
   });
 });

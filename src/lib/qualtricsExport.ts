@@ -1,4 +1,5 @@
 import { GridConfig } from "../grid-types";
+import { cellSizedTuning, gridPixelSize } from "./gridSize";
 import { respondentTextsFor } from "./respondentTexts";
 
 export interface QualtricsExportOptions {
@@ -113,11 +114,18 @@ export function buildQualtricsSnippet(
   const embeddedDataField = options.embeddedDataField ?? "GridAssignments";
   const prefillsField = options.prefillsField ?? "GridPrefills";
   const responsesField = options.responsesField ?? "GridResponses";
+  // The grid's size follows from its cells, rows and columns. A survey saved
+  // before cell sizes, if it reaches here without normalizeConfig, gets the
+  // cell size it had, so its grid keeps its pixel size.
+  const tuning = cellSizedTuning(config.tuning, config.layout.rows, config.layout.cols);
+  const gridSize = gridPixelSize({ layout: config.layout, tuning });
   const exportConfig = {
     // A question made only of spaces counts as blank, so the script shows
     // the wording written in Qualtrics instead of an empty line.
     layout: { ...config.layout, questionText: exportedQuestionText(config.layout.questionText) },
-    tuning: config.tuning,
+    // The script sizes the grid's frame with gridWidth and gridHeight; the
+    // cells share it out evenly, so each gets cellWidth × cellHeight px.
+    tuning: { ...tuning, gridWidth: gridSize.width, gridHeight: gridSize.height },
     // The grid's own wording for the texts around it goes in once, merged
     // with GRIDDY's English, as `texts` below.
     survey: { ...config.survey, respondentTexts: undefined },
@@ -1644,9 +1652,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		computePrefills(totalCellsCount, centerRowVal, centerColVal);
 	}
 
+	// The grid's designed size, from its cells, rows and columns. The cells
+	// below share it out evenly, so each keeps its designed size.
 	var wrapper = document.createElement("div");
-	wrapper.style.width = cfg.tuning.previewWidth + "px";
-	wrapper.style.height = cfg.tuning.previewHeight + "px";
+	wrapper.style.width = cfg.tuning.gridWidth + "px";
+	wrapper.style.height = cfg.tuning.gridHeight + "px";
 	wrapper.style.border = "1px solid #e2dccf";
 	wrapper.style.backgroundColor = "#f3efe6";
 	wrapper.style.overflow = "auto";

@@ -3,6 +3,7 @@ import PreviewViewChoice, { type PreviewViewOption } from "./PreviewViewChoice";
 import RespondentPreview from "./RespondentPreview";
 import { useEditor } from "../EditorContext";
 import { LayerMode, WeightEntry } from "../grid-types";
+import { gridPixelSize, gridSizeText } from "../lib/gridSize";
 import {
   DESIGN_VIEWS,
   DESIGN_VIEW_STORAGE_KEY,
@@ -514,14 +515,16 @@ export const PreviewPanel: React.FC = () => {
         ? "Clicks here change the pre-fills every respondent sees. Try answering in Respondent preview."
         : "Sample preview — each respondent gets an independent draw.";
 
-  // 100% draws the grid at its designed size, as respondents see it. Fit
-  // stretches or shrinks the cells to the panel's width; text keeps its size.
+  // 100% draws the grid at its designed size, as respondents see it: its
+  // cells, rows and columns make that size. Fit stretches or shrinks the
+  // cells to the panel's width, keeping the grid's shape; text keeps its size.
+  const gridSize = gridPixelSize(config);
   const designGridSize: React.CSSProperties =
     designView === "full"
-      ? { width: tuning.previewWidth, height: tuning.previewHeight, boxSizing: "content-box" }
-      : { width: "100%", aspectRatio: `${tuning.previewWidth} / ${tuning.previewHeight}` };
+      ? { width: gridSize.width, height: gridSize.height, boxSizing: "content-box" }
+      : { width: "100%", aspectRatio: `${gridSize.width} / ${gridSize.height}` };
   // At 100%, the grid and its 1 px borders are wider than the panel.
-  const designTooNarrow = designStageWidth > 0 && designStageWidth < tuning.previewWidth + 2;
+  const designTooNarrow = designStageWidth > 0 && designStageWidth < gridSize.width + 2;
 
   return (
     <>
@@ -558,7 +561,7 @@ export const PreviewPanel: React.FC = () => {
         {previewTab === "respondent" ? (
           <RespondentPreview
             snippet={qualtricsSnippet}
-            gridWidth={tuning.previewWidth}
+            gridWidth={gridSize.width}
             view={respondentView}
             onViewChange={setRespondentView}
           />
@@ -736,7 +739,7 @@ export const PreviewPanel: React.FC = () => {
         />
         {designView === "fit" ? (
           <p className="text-xs text-ink-muted">
-            Scaled to fit this panel. Respondents see the grid at {tuning.previewWidth} × {tuning.previewHeight} px.
+            Scaled to fit this panel. Respondents see the grid at {gridSizeText(gridSize)}.
           </p>
         ) : (
           designTooNarrow && (

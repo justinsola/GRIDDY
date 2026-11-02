@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { gridPixelSize } from "./gridSize";
 import { buildQualtricsQsf, buildQualtricsSnippet, QualtricsExportOptions } from "./qualtricsExport";
 import { RESPONDENT_TEXT_KEYS, type RespondentTextKey } from "./respondentTexts";
 import type { GridConfig } from "../grid-types";
@@ -244,8 +245,24 @@ function reminder(container: HTMLElement): HTMLElement {
   return el;
 }
 
+/** A grid sized by its cells: 4 columns of 100 px, 10 px apart, make it
+ * 430 px wide, more than a phone's 339 px. */
+function wideGrid(): GridConfig {
+  const base = makeConfig();
+  return {
+    ...base,
+    layout: { ...base.layout, cols: 4 },
+    tuning: { gridGap: 10, gridPadding: 0, labelFontSizeRem: 1, cellWidth: 100, cellHeight: 100, sizing: "cells" },
+  };
+}
+
+function gridFrame(container: HTMLElement): HTMLElement {
+  return container.querySelector<HTMLElement>("[data-griddy-scroller]")!.firstElementChild as HTMLElement;
+}
+
 describe("the grid keeps its designed size", () => {
   it("puts the grid, at its designed width and height, in a frame that scrolls sideways", () => {
+    // makeConfig is a survey saved before cell sizes: its grid filled 550 × 550 px.
     const { container } = run(makeConfig());
     const scroller = container.querySelector<HTMLElement>("[data-griddy-scroller]");
     expect(scroller).not.toBeNull();
@@ -254,6 +271,20 @@ describe("the grid keeps its designed size", () => {
     expect(wrapper.style.height).toBe("550px");
     expect(container.querySelectorAll("[data-griddy-edge]")).toHaveLength(2);
     expect(container.querySelector("[data-griddy-scroll-hint]")).not.toBeNull();
+  });
+
+  it("makes the grid the size its cells, rows and columns add up to, as the editor says", () => {
+    const config = wideGrid();
+    const { container } = run(config);
+    expect(gridPixelSize(config)).toEqual({ width: 430, height: 320 });
+    expect(gridFrame(container).style.width).toBe("430px");
+    expect(gridFrame(container).style.height).toBe("320px");
+    // The cells share the frame out evenly, 10 px apart: 100 px each.
+    const grid = container.querySelector<HTMLElement>("[data-griddy-grid]")!;
+    expect(grid.style.gridTemplateColumns).toBe("repeat(4, minmax(0, 1fr))");
+    expect(grid.style.gridTemplateRows).toBe("repeat(3, minmax(0, 1fr))");
+    expect(grid.style.gap).toBe("10px");
+    expect(grid.style.padding).toBe("0px");
   });
 });
 

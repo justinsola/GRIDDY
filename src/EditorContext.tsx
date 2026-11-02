@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- the context module also exports its reducer and helpers */
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
-import { repairGridSize } from "./lib/gridSize";
+import { cellSizedTuning, defaultTuning, repairGridSize } from "./lib/gridSize";
 import { cleanRespondentTexts } from "./lib/respondentTexts";
 import type { SurveyMeta } from "./lib/surveysApi";
 import {
@@ -184,16 +184,21 @@ export function normalizeConfig(config: GridConfig): GridConfig {
     existingExp.responseLabelMeta ?? {},
   );
   const weightedEntries = existingExp.weightedEntries ?? [];
+  const rows = repairGridSize(config.layout.rows, 3);
+  const cols = repairGridSize(config.layout.cols, 3);
   return {
     ...config,
     layout: {
       ...config.layout,
-      rows: repairGridSize(config.layout.rows, 3),
-      cols: repairGridSize(config.layout.cols, 3),
+      rows,
+      cols,
       barriersCsv: barriers.csv,
       barrierMeta: syncCategoryMeta(barriers.csv, barriers.meta),
       blockedCells: trimValues(config.layout.blockedCells ?? {}),
     },
+    // A survey saved before cell sizes gets the cell size its fixed frame
+    // gave it, so its grid keeps its pixel size.
+    tuning: cellSizedTuning(config.tuning, rows, cols),
     survey: {
       ...config.survey,
       categoriesCsv: categories.csv,
@@ -267,15 +272,9 @@ function createDefaultConfig(): GridConfig {
     blockedCells: {},
   };
 
-  const tuning: TuningConfig = {
-    gridGap: 10,
-    gridPadding: 0,
-    labelFontSizeRem: 1,
-    cellWidth: 100,
-    cellHeight: 120,
-    previewWidth: 550,
-    previewHeight: 550,
-  };
+  // Cells of 100 × 100 px: the 3 × 3 grid is 320 × 320 px, which fits a
+  // phone. The grid grows with every row and column.
+  const tuning: TuningConfig = defaultTuning();
 
   const defaultCsv = "Family, Friends, Coworkers, Neighbors";
   const survey: SurveyConfig = {

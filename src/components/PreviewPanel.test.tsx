@@ -160,8 +160,9 @@ it("tells researchers to keep the grid last on its page in Qualtrics", () => {
 it("draws the design grid at its designed size until Fit is chosen, and remembers the choice", () => {
   renderPanel();
   expect(isPressed("100%")).toBe(true);
-  expect(designGrid().style.width).toBe("550px");
-  expect(designGrid().style.height).toBe("550px");
+  // A new survey's 3 × 3 grid: cells of 100 × 100 px, 10 px apart.
+  expect(designGrid().style.width).toBe("320px");
+  expect(designGrid().style.height).toBe("320px");
   expect(designGrid().style.boxSizing).toBe("content-box");
   expect(host.textContent).not.toContain("Scaled to fit");
 
@@ -169,7 +170,7 @@ it("draws the design grid at its designed size until Fit is chosen, and remember
   expect(isPressed("Fit")).toBe(true);
   expect(designGrid().style.width).toBe("100%");
   expect(designGrid().style.height).toBe("");
-  expect(host.textContent).toContain("Scaled to fit this panel. Respondents see the grid at 550 × 550 px.");
+  expect(host.textContent).toContain("Scaled to fit this panel. Respondents see the grid at 320 × 320 px.");
   expect(window.localStorage.getItem(DESIGN_VIEW_STORAGE_KEY)).toBe("fit");
 
   act(() => root.unmount());
@@ -177,6 +178,43 @@ it("draws the design grid at its designed size until Fit is chosen, and remember
   renderPanel();
   expect(isPressed("Fit")).toBe(true);
   expect(designGrid().style.width).toBe("100%");
+});
+
+it("sizes both previews from the grid's cells, rows and columns", () => {
+  renderPanel();
+  act(() => editor.dispatch({ type: "updateTuning", patch: { cellWidth: 150, cellHeight: 60 } }));
+  act(() => editor.dispatch({ type: "updateLayout", patch: { cols: 4 } }));
+  // 4 columns of 150 px and 3 rows of 60 px, 10 px apart.
+  expect(designGrid().style.width).toBe("630px");
+  expect(designGrid().style.height).toBe("200px");
+
+  click("Fit");
+  // Fit keeps the grid's shape.
+  expect(designGrid().style.aspectRatio).toBe("630 / 200");
+  expect(host.textContent).toContain("Respondents see the grid at 630 × 200 px.");
+
+  click("Respondent preview");
+  // The grid, its borders and the page's padding.
+  expect(host.querySelector("iframe")!.style.minWidth).toBe("650px");
+});
+
+it("keeps a survey saved before cell sizes at the size it had in both previews", () => {
+  renderPanel();
+  // The tuning every survey was saved with before November 2026.
+  const oldTuning = {
+    gridGap: 10,
+    gridPadding: 0,
+    labelFontSizeRem: 1,
+    cellWidth: 100,
+    cellHeight: 120,
+    previewWidth: 550,
+    previewHeight: 550,
+  };
+  act(() => editor.dispatch({ type: "setConfig", config: { ...editor.state.config, tuning: oldTuning } }));
+  expect(designGrid().style.width).toBe("550px");
+  expect(designGrid().style.height).toBe("550px");
+  click("Respondent preview");
+  expect(host.querySelector("iframe")!.style.minWidth).toBe("570px");
 });
 
 it("lets the researcher fill design cells in both views", () => {
@@ -220,8 +258,11 @@ it("keeps blocking, dropdown and drag-and-drop cells working at full size", () =
   expect(cell("r1·c3").textContent).toContain("Coworkers");
 });
 
+/** A preview panel narrower than a new survey's 320 px grid. */
+const NARROW_PANEL = 272;
+
 it("says when the design grid is wider than the panel", () => {
-  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(456);
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   expect(host.textContent).toContain("Wider than this panel. Scroll sideways, or choose Fit.");
   click("Fit");
@@ -280,11 +321,11 @@ it("shows the respondent preview at full size, on a phone or zoomed to fit, and 
   const frame = () => host.querySelector("iframe")!;
   expect(isPressed("Desktop")).toBe(true);
   // Desktop: nothing zooms the page, and the frame is at least as wide as
-  // the 550 px grid with its borders and the page's padding.
+  // the 320 px grid with its borders and the page's padding.
   expect(frame().srcdoc).not.toContain("zoom");
   expect(frame().style.transform).toBe("");
   expect(frame().style.width).toBe("100%");
-  expect(frame().style.minWidth).toBe("570px");
+  expect(frame().style.minWidth).toBe("340px");
 
   click("Phone");
   expect(frame().style.width).toBe("377px");
@@ -302,21 +343,21 @@ it("shows the respondent preview at full size, on a phone or zoomed to fit, and 
 });
 
 it("zooms the respondent preview out when Fit is chosen, and says by how much", () => {
-  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(456);
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   click("Respondent preview");
   const frame = host.querySelector("iframe")!;
   expect(host.textContent).toContain("Wider than this panel. Scroll sideways, or choose Fit.");
 
   click("Fit");
-  expect(frame.style.width).toBe("570px");
+  expect(frame.style.width).toBe("340px");
   expect(frame.style.transform).toBe("scale(0.8)");
   expect(host.textContent).toContain("Shown at 80% so the whole grid fits. Respondents see it at full size.");
   expect(host.textContent).not.toContain("Wider than this panel");
 });
 
 it("sizes the respondent frame to its page in every view", () => {
-  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(456);
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   click("Respondent preview");
   const frame = host.querySelector("iframe")!;
@@ -343,7 +384,7 @@ it("sizes the respondent frame to its page in every view", () => {
 });
 
 it("shows the zoomed-out page from its top left corner after Desktop was scrolled", () => {
-  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(456);
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   click("Respondent preview");
   const stage = host.querySelector("iframe")!.parentElement!;
