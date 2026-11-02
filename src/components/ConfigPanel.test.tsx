@@ -97,7 +97,7 @@ it("opens no file picker from an image's caption, and names each image's address
   for (const caption of captions) act(() => caption.click());
   expect(picked).not.toHaveBeenCalled();
   const addresses = Array.from(host.querySelectorAll('input[type="url"]'));
-  expect(addresses.map((input) => input.getAttribute("aria-label"))).toEqual(["Image URL", "Image URL"]);
+  expect(addresses.map((input) => input.getAttribute("aria-label"))).toEqual(["Background image URL", "Family image URL"]);
 });
 
 it("says under the question box where respondents' wording comes from", () => {

@@ -142,9 +142,12 @@ it("shows why the editor's changes were not saved and keeps Download off", async
 it("can use the saved version instead, leaving the editor's changes out", async () => {
   await addSurveyWithUnsavedEdits();
 
+  act(() => button("Use the saved version instead").focus());
   act(() => button("Use the saved version instead").click());
   expect(host.textContent).not.toContain(UNSAVED);
   expect(button("Download .qsf").disabled).toBe(false);
+  // The button removed itself; focus moves on to Download.
+  expect(document.activeElement).toBe(button("Download .qsf"));
   expect(hasUnsavedChanges(editor.state)).toBe(true);
   const qsf = await downloadQsf();
   expect(qsf).toContain("Saved question");
@@ -254,6 +257,33 @@ it("shows the fields as Qualtrics records them, and names a field two questions 
   );
   expect(host.textContent).toContain('both write to the field "__js_GridAssignments_Map"');
   expect(button("Download .qsf").disabled).toBe(true);
+  // A long name may wrap after its underscores, but never inside "__js_".
+  const shown = Array.from(host.querySelectorAll("span")).find((span) =>
+    span.textContent?.startsWith("Saved in Qualtrics as __js_GridAssignments_Map"),
+  )!;
+  expect(shown.innerHTML).toContain("__js_<wbr>GridAssignments_<wbr>Map");
+  expect(shown.innerHTML).not.toContain("_<wbr>_");
+});
+
+it("moves focus to the clash message when a save leaves Download off", async () => {
+  act(() => root.render(page(false)));
+  editConfig({ name: "Map", questionText: "Saved question" });
+  const record = await saveSurvey(editor.state.config);
+  act(() => editor.dispatch({ type: "markSaved", record }));
+  await saveSurvey({ ...editor.state.config, id: "map-2", name: "Map" });
+  editConfig({ questionText: "Edited question" });
+  await act(async () => root.render(page(true)));
+  act(() => button("+ Add").click());
+  act(() => button("+ Add").click());
+
+  act(() => button("Save the editor's changes").focus());
+  await act(async () => button("Save the editor's changes").click());
+  expect(host.textContent).not.toContain(UNSAVED);
+  expect(button("Download .qsf").disabled).toBe(true);
+  const clash = Array.from(host.querySelectorAll("p")).find((p) =>
+    p.textContent?.includes('both write to the field "__js_GridAssignments_Map"'),
+  );
+  expect(document.activeElement).toBe(clash);
 });
 
 it("keeps each grid's own words for respondents in the .qsf", async () => {

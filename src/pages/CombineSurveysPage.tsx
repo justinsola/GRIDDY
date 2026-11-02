@@ -71,14 +71,15 @@ function savedFieldNames(survey: ExportedSurvey, fieldLabel: string): string {
     .join(" and ");
 }
 
-/** Lets a long field name wrap after its underscores instead of mid-word. */
+/** Lets a long field name wrap after its underscores instead of mid-word,
+ * but never inside the leading "__js_". */
 function breakAtUnderscores(text: string) {
   return text.split("_").map((part, i, parts) => (
     <Fragment key={i}>
       {part}
       {i < parts.length - 1 && (
         <>
-          _<wbr />
+          _{/[A-Za-z0-9]$/.test(part) && <wbr />}
         </>
       )}
     </Fragment>
@@ -109,6 +110,7 @@ export default function CombineSurveysPage() {
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const saveEditorButton = useRef<HTMLButtonElement>(null);
   const downloadButton = useRef<HTMLButtonElement>(null);
+  const clashMessage = useRef<HTMLParagraphElement>(null);
   // Set when the editor's changes are saved, which removes the button that
   // saved them: focus then moves on to Download rather than to the page.
   const [focusDownload, setFocusDownload] = useState(false);
@@ -127,7 +129,10 @@ export default function CombineSurveysPage() {
   useEffect(() => {
     if (!focusDownload) return;
     setFocusDownload(false);
-    downloadButton.current?.focus();
+    // A field clash can keep Download disabled; then its message takes focus.
+    const download = downloadButton.current;
+    if (download && !download.disabled) download.focus();
+    else clashMessage.current?.focus();
   }, [focusDownload]);
 
   const addQuestion = (id: string) => {
@@ -369,7 +374,7 @@ export default function CombineSurveysPage() {
                       {index + 1}
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="font-semibold text-ink">
+                      <span className="break-words font-semibold text-ink">
                         {survey.name || survey.id.slice(0, 8)}
                       </span>
                       <span className="break-words font-mono text-[10.5px] text-ink-faint">
@@ -443,7 +448,10 @@ export default function CombineSurveysPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setSavedCopyIds((prev) => [...prev, editorState.config.id])}
+                onClick={() => {
+                  setSavedCopyIds((prev) => [...prev, editorState.config.id]);
+                  setFocusDownload(true);
+                }}
                 className="rounded-md bg-paper-window px-3 py-1.5 text-sm font-semibold text-ink-muted hover:bg-hairline-warm"
               >
                 Use the saved version instead
@@ -451,7 +459,9 @@ export default function CombineSurveysPage() {
             </div>
           )}
           {fieldCollisionError && (
-            <p className="mt-3 text-sm font-semibold text-accent">{fieldCollisionError}</p>
+            <p ref={clashMessage} tabIndex={-1} className="mt-3 text-sm font-semibold text-accent">
+              {fieldCollisionError}
+            </p>
           )}
           {saveConflict && (
             <SaveChoiceDialog

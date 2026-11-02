@@ -215,6 +215,7 @@ export const CategoryChips: React.FC<Props> = ({
                 value={open.imageUrl ?? ""}
                 onChange={(v) => update(openIndex, { imageUrl: v })}
                 hint={imageHint}
+                label={`${open.name} image URL`}
               />
             </div>
           </div>

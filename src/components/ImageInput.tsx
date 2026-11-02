@@ -16,6 +16,8 @@ interface Props {
   hint?: string;
   /** Longest side, in pixels, an uploaded image is reduced to. Defaults to 512. */
   maxDim?: number;
+  /** Accessible name of the URL field, telling apart several on one screen. */
+  label?: string;
 }
 
 const DEFAULT_WARN_BYTES = 500 * 1024;
@@ -32,6 +34,7 @@ export const ImageInput: React.FC<Props> = ({
   warnBytes = DEFAULT_WARN_BYTES,
   maxDim,
   hint,
+  label = "Image URL",
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -112,7 +115,7 @@ export const ImageInput: React.FC<Props> = ({
             onChange={(e) => onChange(e.target.value)}
             placeholder={isDataUri ? "Uploaded image embedded" : placeholder}
             disabled={isDataUri}
-            aria-label="Image URL"
+            aria-label={label}
             aria-describedby={describedBy}
             className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:bg-paper-window disabled:text-ink-faint"
           />

@@ -34,3 +34,8 @@ it("points to no hint when there is none", () => {
   expect(addressBox().hasAttribute("aria-describedby")).toBe(false);
   expect(buttonByText("Replace image").hasAttribute("aria-describedby")).toBe(false);
 });
+
+it("names the address box after the picture it is for", () => {
+  act(() => root.render(<ImageInput value="" onChange={() => {}} label="Background image URL" />));
+  expect(addressBox().getAttribute("aria-label")).toBe("Background image URL");
+});

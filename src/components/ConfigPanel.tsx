@@ -378,6 +378,7 @@ const QuestionGridForm: React.FC = () => {
         <ImageInput
           value={layout.backgroundImageUrl}
           placeholder="https://example.com/map.png"
+          label="Background image URL"
           onChange={(v) => update({ backgroundImageUrl: v })}
           // The background fills the whole grid frame, so keep enough pixels
           // for it to stay sharp on high-density screens.
