@@ -17,7 +17,7 @@ changes; it is the one place that says where the project stands._
 ## Health (checked 2 November 2026)
 
 - `main` is at `fbec42e` (PR 17, merged 1 November). Its build, its 186 tests in 13 files and lint passed locally on Node 24 and in CI on Node 22 before the merge.
-- The 2 November changes (on a branch from `main`, not merged yet) pass `npm run build`, `npm test` (284 tests in 16 files) and `npm run lint` locally on Node 24. With them the main bundle is 504 kB, so the build prints Vite's "Some chunks are larger than 500 kB" warning; it still passes.
+- The 2 November changes (on a branch from `main`, not merged yet) pass `npm run build`, `npm test` (307 tests in 18 files) and `npm run lint` locally on Node 24. With them the main bundle is 504 kB, so the build prints Vite's "Some chunks are larger than 500 kB" warning; it still passes.
 - The live site serves `index.html` and its assets under `/GRIDDY/`; deep links such as `/GRIDDY/history` load the app through `404.html` (the HTTP status is 404, which is expected on GitHub Pages).
 - CI (`.github/workflows/ci.yml`) runs build, tests and lint on every pull request and every push to `main`.
 - Repository settings: description and seven topics set, homepage field points at the live app, Issues enabled (none open). `main` is not protected and the merged branches have not been deleted; both were declined on 31 October to avoid distractions.
@@ -66,8 +66,8 @@ changes; it is the one place that says where the project stands._
 
 ## Known gaps
 
-- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run fourteen times on 1 and 2 November 2026, on `main` and on the fix branches; one of the 2 November runs covered both of Qualtrics' survey-taking experiences. The runs used thirteen Qualtrics test projects, which are still in Justin's account; he deletes them himself. `docs/testing-in-qualtrics.md` is the process and its findings log. PR 17 fixed what the 1 November runs and three code reviews found. The 2 November changes make the grid record its answers in the new survey-taking experience and settle the eight open questions; the doc's "Open questions" section lists the two still open (run-time language sets, and piped text with a quote).
-- Not yet tried in a live Qualtrics survey: a full set of respondent texts in another language, right-to-left texts, and a real screen reader hearing translated texts.
+- The end-to-end path (build, export, import into Qualtrics, preview, recorded answers) was run fifteen times on 1 and 2 November 2026, on `main` and on the fix branches; the last four runs covered Qualtrics' new survey-taking experience as well as the older layout. The runs used fourteen Qualtrics test projects, which are still in Justin's account; he deletes them himself. `docs/testing-in-qualtrics.md` is the process and its findings log. PR 17 fixed what the 1 November runs and three code reviews found. The 2 November changes make the grid record its answers in the new survey-taking experience and settle the eight open questions; the doc's "Open questions" section lists the two still open (run-time language sets, and piped text with a quote).
+- Tried live: eleven respondent texts in Spanish, in both survey-taking experiences. Not yet tried in a live Qualtrics survey: a full set of texts in another language, right-to-left texts, and a real screen reader hearing translated texts.
 - Tests are unit tests only (export builders, reducer, storage, preview panel, editor pages). Nothing drives the real UI automatically.
 - The app page has no `description` or social-preview meta tags.
 - Page 7 of the documentation PDF is half blank (cosmetic).
