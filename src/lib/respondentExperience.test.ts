@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { gridPixelSize } from "./gridSize";
 import { buildQualtricsQsf, buildQualtricsSnippet, QualtricsExportOptions } from "./qualtricsExport";
 import { RESPONDENT_TEXT_KEYS, type RespondentTextKey } from "./respondentTexts";
 import type { GridConfig } from "../grid-types";
@@ -244,8 +245,24 @@ function reminder(container: HTMLElement): HTMLElement {
   return el;
 }
 
+/** A grid sized by its cells: 4 columns of 100 px, 10 px apart, make it
+ * 430 px wide, more than the 292 px Qualtrics' phone view leaves for it. */
+function wideGrid(scrollStart?: "center" | "left"): GridConfig {
+  const base = makeConfig();
+  return {
+    ...base,
+    layout: { ...base.layout, cols: 4, ...(scrollStart ? { scrollStart } : {}) },
+    tuning: { gridGap: 10, gridPadding: 0, labelFontSizeRem: 1, cellWidth: 100, cellHeight: 100, sizing: "cells" },
+  };
+}
+
+function gridFrame(container: HTMLElement): HTMLElement {
+  return container.querySelector<HTMLElement>("[data-griddy-scroller]")!.firstElementChild as HTMLElement;
+}
+
 describe("the grid keeps its designed size", () => {
   it("puts the grid, at its designed width and height, in a frame that scrolls sideways", () => {
+    // makeConfig is a survey saved before cell sizes: its grid filled 550 × 550 px.
     const { container } = run(makeConfig());
     const scroller = container.querySelector<HTMLElement>("[data-griddy-scroller]");
     expect(scroller).not.toBeNull();
@@ -254,6 +271,291 @@ describe("the grid keeps its designed size", () => {
     expect(wrapper.style.height).toBe("550px");
     expect(container.querySelectorAll("[data-griddy-edge]")).toHaveLength(2);
     expect(container.querySelector("[data-griddy-scroll-hint]")).not.toBeNull();
+  });
+
+  it("makes the grid the size its cells, rows and columns add up to, as the editor says", () => {
+    const config = wideGrid();
+    const { container } = run(config);
+    expect(gridPixelSize(config)).toEqual({ width: 430, height: 320 });
+    expect(gridFrame(container).style.width).toBe("430px");
+    expect(gridFrame(container).style.height).toBe("320px");
+    // The cells share the frame out evenly, 10 px apart: 100 px each.
+    const grid = container.querySelector<HTMLElement>("[data-griddy-grid]")!;
+    expect(grid.style.gridTemplateColumns).toBe("repeat(4, minmax(0, 1fr))");
+    expect(grid.style.gridTemplateRows).toBe("repeat(3, minmax(0, 1fr))");
+    expect(grid.style.gap).toBe("10px");
+    expect(grid.style.padding).toBe("0px");
+  });
+
+  it("draws its border outside that size, also in a theme that sizes everything by its border box", () => {
+    // Qualtrics themes often set this, which would squeeze the cells by 2 px.
+    const theme = document.createElement("style");
+    theme.textContent = "*, *::before, *::after { box-sizing: border-box; }";
+    document.head.appendChild(theme);
+    try {
+      const frame = gridFrame(run(wideGrid()).container);
+      expect(frame.style.boxSizing).toBe("content-box");
+      expect(getComputedStyle(frame).boxSizing).toBe("content-box");
+      expect(frame.style.width).toBe("430px");
+      expect(frame.style.borderWidth).toBe("1px");
+    } finally {
+      theme.remove();
+    }
+  });
+});
+
+describe("where a grid wider than the screen starts", () => {
+  type Callback = () => void;
+  let observers: Callback[] = [];
+  class FakeResizeObserver {
+    constructor(callback: Callback) {
+      observers.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+  }
+  beforeEach(() => {
+    observers = [];
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver;
+  });
+  afterEach(() => {
+    delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+  const layoutChanged = () => observers.forEach((callback) => callback());
+
+  /** Lays the grid out in a frame `clientWidth` px wide, as a browser would:
+   * the 430 px grid and its 1 px borders are 432 px to scroll through, and
+   * the scroll position stays within the room there is. */
+  function laidOut(container: HTMLElement, clientWidth: number): HTMLElement {
+    const scroller = container.querySelector<HTMLElement>("[data-griddy-scroller]")!;
+    const gridWidth = parseFloat(gridFrame(container).style.width) + 2;
+    const room = Math.max(0, gridWidth - clientWidth);
+    let left = Math.min(scroller.scrollLeft, room);
+    Object.defineProperty(scroller, "scrollWidth", { configurable: true, value: Math.max(gridWidth, clientWidth) });
+    Object.defineProperty(scroller, "clientWidth", { configurable: true, value: clientWidth });
+    Object.defineProperty(scroller, "scrollLeft", {
+      configurable: true,
+      get: () => left,
+      set: (value: number) => {
+        left = Math.max(0, Math.min(value, room));
+      },
+    });
+    return scroller;
+  }
+  const arrows = (container: HTMLElement) =>
+    (["left", "right"] as const).map(
+      (side) => container.querySelector<HTMLElement>(`[data-griddy-edge="${side}"]`)!.style.display,
+    );
+
+  it("starts scrolled to the middle, with the hint and both arrows", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    // 432 px of grid in Qualtrics' 292 px phone view leaves 140 px to
+    // scroll; half is 70.
+    expect(scroller.scrollLeft).toBe(70);
+    expect(arrows(r.container)).toEqual(["flex", "flex"]);
+    expect(r.container.querySelector<HTMLElement>("[data-griddy-scroll-hint]")!.style.display).toBe("block");
+  });
+
+  it("starts at the left edge when the researcher chose it", () => {
+    const r = run(wideGrid("left"));
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+  });
+
+  it("centres the grid again whenever the layout changes before the respondent uses it", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 306);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(63);
+    // The browser reports the script's own scrolling too; it is not the
+    // respondent's.
+    scroller.dispatchEvent(new Event("scroll"));
+    // In Qualtrics' new survey-taking experience the page settled 14 px
+    // narrower after the grid had centred itself.
+    laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+    // A window made wider, so that the grid fits, then narrower again.
+    laidOut(r.container, 600);
+    window.dispatchEvent(new Event("resize"));
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "none"]);
+    laidOut(r.container, 339);
+    window.dispatchEvent(new Event("resize"));
+    expect(scroller.scrollLeft).toBe(47);
+    expect(arrows(r.container)).toEqual(["flex", "flex"]);
+  });
+
+  it("stays where it is once the respondent presses, touches, scrolls or types in the grid", () => {
+    for (const type of ["pointerdown", "touchstart", "wheel", "keydown", "click", "drop"]) {
+      document.body.innerHTML = "";
+      const r = run(wideGrid());
+      const scroller = laidOut(r.container, 306);
+      layoutChanged();
+      expect(scroller.scrollLeft).toBe(63);
+      cells(r.container)[4].dispatchEvent(new Event(type, { bubbles: true }));
+      laidOut(r.container, 292);
+      layoutChanged();
+      window.dispatchEvent(new Event("resize"));
+      expect(scroller.scrollLeft, type).toBe(63);
+    }
+  });
+
+  it("stays where an edge arrow puts it", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    // Pressed the way a screen reader does: a click and nothing else.
+    r.container.querySelector<HTMLElement>('[data-griddy-edge="right"] button')!.click();
+    expect(scroller.scrollLeft).toBe(140);
+    laidOut(r.container, 306);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(126);
+    expect(arrows(r.container)).toEqual(["flex", "none"]);
+  });
+
+  it("stays where the respondent scrolls it, however they scroll", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+
+    // Scrolled to the left edge without a touch or key the script hears, as
+    // a screen reader can.
+    scroller.scrollLeft = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+    // The phone turns, the window is resized, the reminder appears.
+    laidOut(r.container, 306);
+    layoutChanged();
+    window.dispatchEvent(new Event("resize"));
+    button(r.container, "Next").click();
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "flex"]);
+  });
+
+  it("tells the browser moving the grid in a wider frame from the respondent scrolling it", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+    // 432 px in a 420 px frame leave 12 px to scroll, so the browser moves
+    // the grid to 12 and reports a scroll before the layout callbacks run.
+    laidOut(r.container, 420);
+    expect(scroller.scrollLeft).toBe(12);
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(scroller.scrollLeft).toBe(6);
+    layoutChanged();
+    laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+  });
+
+  it("stays where it is once the respondent presses Show me", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    button(r.container, "Next").click();
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+    button(r.container, "Show me").click();
+    laidOut(r.container, 306);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+  });
+
+  it("stays where it is once the respondent drops a label in it with a finger", () => {
+    const r = run(withSurvey({ selectionMode: "dragdrop" }, wideGrid()));
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+    const chip = button(r.container, "Friends");
+    const fire = (type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 300 });
+      Object.defineProperty(event, "pointerType", { value: "touch" });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      chip.dispatchEvent(event);
+    };
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => cells(r.container)[1];
+    try {
+      fire("pointerdown", 100);
+      fire("pointermove", 150);
+      fire("pointerup", 150);
+    } finally {
+      document.elementFromPoint = original;
+    }
+    expect(JSON.parse(r.embedded.__js_GridAssignments)).toEqual({ "r1-c2": "Friends" });
+    laidOut(r.container, 306);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+  });
+
+  it("keeps a grid that starts at its left edge there the same way", () => {
+    const r = run(wideGrid("left"));
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    // Moved before the respondent used the grid, as a browser restoring a
+    // scroll position can: the next layout change puts it back.
+    scroller.scrollLeft = 30;
+    laidOut(r.container, 306);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    // Once the respondent touches and scrolls it, it stays.
+    cells(r.container)[0].dispatchEvent(new Event("touchstart", { bubbles: true }));
+    scroller.scrollLeft = 30;
+    scroller.dispatchEvent(new Event("scroll"));
+    laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(30);
+  });
+
+  it("leaves a grid that fits as it is", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 600);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    expect(arrows(r.container)).toEqual(["none", "none"]);
+  });
+
+  it("centres the grid the first time it is wider than its frame", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 600);
+    layoutChanged();
+    // A window made narrower, or a phone turned upright.
+    laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+  });
+
+  it("waits for the frame to be laid out", () => {
+    const r = run(wideGrid());
+    const scroller = laidOut(r.container, 0);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+    laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+  });
+
+  it("centres a grid that display logic hides at first when it appears", () => {
+    const block = document.createElement("div");
+    block.style.display = "none";
+    document.body.appendChild(block);
+    const r = run(wideGrid(), {}, "", { parent: block });
+    const scroller = laidOut(r.container, 292);
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(0);
+
+    block.style.display = "block";
+    layoutChanged();
+    expect(scroller.scrollLeft).toBe(70);
+    expect(arrows(r.container)).toEqual(["flex", "flex"]);
   });
 });
 

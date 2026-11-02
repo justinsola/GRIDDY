@@ -2,6 +2,10 @@ import type { RespondentTexts } from "./lib/respondentTexts";
 
 export type SkipBehavior = "remind" | "allow" | "force";
 
+/** Where a grid wider than the respondent's screen starts: scrolled to its
+ * middle, or at its left edge. */
+export type ScrollStart = "center" | "left";
+
 export interface LayoutConfig {
   questionText: string;
   rows: number;
@@ -21,16 +25,40 @@ export interface LayoutConfig {
   barrierMeta: Record<string, CategoryMeta>;
   /** exportKey "r{row}-c{col}" -> barrier type name. Mirrors experimental.fixedAssignments. */
   blockedCells: Record<string, string>;
+  /**
+   * Where a grid wider than the respondent's screen starts. Missing (as in
+   * surveys saved before November 2026) or "center": scrolled to its
+   * middle. "left": at its left edge.
+   */
+  scrollStart?: ScrollStart;
 }
 
 export interface TuningConfig {
+  /** Space between cells, in pixels. */
   gridGap: number;
+  /** Space between the cells and the grid's border, in pixels. */
   gridPadding: number;
+  /** Not used. */
   labelFontSizeRem: number;
+  /**
+   * Each cell's width and height in pixels. With `sizing: "cells"` they set
+   * the grid's size, which grows with every row and column (see
+   * gridPixelSize in src/lib/gridSize.ts). A migrated survey can have
+   * fractional sizes; the editor sets whole numbers.
+   */
   cellWidth: number;
   cellHeight: number;
-  previewWidth: number;
-  previewHeight: number;
+  /**
+   * "cells": the grid's size follows from cellWidth and cellHeight. Missing
+   * in surveys saved before November 2026, whose grid filled a fixed frame
+   * of previewWidth × previewHeight px; normalizeConfig gives those the
+   * cell size they had and sets this.
+   */
+  sizing?: "cells";
+  /** The fixed frame older surveys drew the grid in. Read only by the
+   * migration in normalizeConfig, which drops them. */
+  previewWidth?: number;
+  previewHeight?: number;
 }
 
 export type LayerMode = "replace" | "front" | "behind";

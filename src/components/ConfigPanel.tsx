@@ -1,7 +1,21 @@
 import React, { useEffect, useId, useState } from "react";
-import { GRID_SIZE_MESSAGE, parseGridSize } from "../lib/gridSize";
+import {
+  CELL_SIZE_MESSAGE,
+  GRID_SIZE_MESSAGE,
+  MAX_CELL_SIZE,
+  MIN_CELL_SIZE,
+  MIN_TAP_SIZE,
+  PHONE_WIDTH,
+  backgroundImageMaxDim,
+  gridPixelSize,
+  gridSizeText,
+  isUnfinishedCellSize,
+  parseCellSize,
+  parseGridSize,
+  scrollsOnPhone,
+} from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
-import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
+import { CategoryMeta, ExperimentalConfig, ScrollStart, SkipBehavior } from "../grid-types";
 import CategoryChips, { ChipItem } from "./CategoryChips";
 import ImageInput from "./ImageInput";
 import RespondentTextsEditor from "./RespondentTextsEditor";
@@ -45,6 +59,11 @@ const PREFILL_MODES = [
     desc: "Your painted assignments are shuffled per respondent.",
   },
 ] as const;
+
+const SCROLL_STARTS: ReadonlyArray<{ value: ScrollStart; label: string }> = [
+  { value: "center", label: "The center" },
+  { value: "left", label: "The left edge" },
+];
 
 const SKIP_BEHAVIORS: ReadonlyArray<{
   value: SkipBehavior;
@@ -237,18 +256,38 @@ function chipItemsToMeta(items: ChipItem[]): Record<string, CategoryMeta> {
 const QuestionGridForm: React.FC = () => {
   const { state: { config }, dispatch } = useEditor();
   const layout = config.layout;
+  const tuning = config.tuning;
   const questionHintId = useId();
+  const cellSizeCaptionId = useId();
+  const gridSizeNotesId = useId();
+  const scrollStartCaptionId = useId();
+  const scrollStartHintId = useId();
+  const scrollStartGroup = useId();
+
+  // The grid's size follows from its cells, rows and columns.
+  const gridSize = gridPixelSize(config);
+  const scrollStart: ScrollStart = layout.scrollStart === "left" ? "left" : "center";
 
   const [rowsInput, setRowsInput] = useState(String(layout.rows));
   const [colsInput, setColsInput] = useState(String(layout.cols));
   const [rowsWarn, setRowsWarn] = useState(false);
   const [colsWarn, setColsWarn] = useState(false);
+  // A survey saved before cell sizes can have fractional cells: the boxes
+  // show them rounded, and they stay as they are until edited.
+  const [cellWidthInput, setCellWidthInput] = useState(String(Math.round(tuning.cellWidth)));
+  const [cellHeightInput, setCellHeightInput] = useState(String(Math.round(tuning.cellHeight)));
+  const [cellWidthWarn, setCellWidthWarn] = useState(false);
+  const [cellHeightWarn, setCellHeightWarn] = useState(false);
 
   useEffect(() => {
     setRowsInput(String(layout.rows));
     setColsInput(String(layout.cols));
     setRowsWarn(false);
     setColsWarn(false);
+    setCellWidthInput(String(Math.round(tuning.cellWidth)));
+    setCellHeightInput(String(Math.round(tuning.cellHeight)));
+    setCellWidthWarn(false);
+    setCellHeightWarn(false);
     // Only resync the inputs when a different survey is loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.id]);
@@ -272,6 +311,33 @@ const QuestionGridForm: React.FC = () => {
     const v = parseGridSize(e.target.value);
     setColsWarn(v === null);
     if (v !== null) update({ cols: v });
+  };
+
+  // Likewise, only a whole number of pixels from 20 to 600 changes a cell.
+  // Digits below 20 are a size still being typed, so they show no note.
+  // Leaving the box without a usable size puts back the last good one.
+  const handleCellWidth = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCellWidthInput(e.target.value);
+    if (e.target.value === "") return;
+    if (isUnfinishedCellSize(e.target.value)) {
+      setCellWidthWarn(false);
+      return;
+    }
+    const v = parseCellSize(e.target.value);
+    setCellWidthWarn(v === null);
+    if (v !== null) dispatch({ type: "updateTuning", patch: { cellWidth: v } });
+  };
+
+  const handleCellHeight = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCellHeightInput(e.target.value);
+    if (e.target.value === "") return;
+    if (isUnfinishedCellSize(e.target.value)) {
+      setCellHeightWarn(false);
+      return;
+    }
+    const v = parseCellSize(e.target.value);
+    setCellHeightWarn(v === null);
+    if (v !== null) dispatch({ type: "updateTuning", patch: { cellHeight: v } });
   };
 
   const inputCls =
@@ -347,6 +413,100 @@ const QuestionGridForm: React.FC = () => {
         </div>
       </div>
 
+      <div>
+        <span id={cellSizeCaptionId} className="text-[10px] font-bold tracking-widest text-ink-faint">
+          CELL SIZE
+        </span>
+        <div role="group" aria-labelledby={cellSizeCaptionId} className="mt-1 grid grid-cols-2 gap-3">
+          <div>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-xs text-ink-muted">Width (px)</span>
+              <input
+                type="number"
+                min={MIN_CELL_SIZE}
+                max={MAX_CELL_SIZE}
+                step={1}
+                aria-label="Cell width in pixels"
+                aria-describedby={gridSizeNotesId}
+                className={inputCls}
+                value={cellWidthInput}
+                onChange={handleCellWidth}
+                onBlur={() => {
+                  if (parseCellSize(cellWidthInput) === null) {
+                    setCellWidthInput(String(Math.round(tuning.cellWidth)));
+                    setCellWidthWarn(false);
+                  }
+                }}
+              />
+            </label>
+            {cellWidthWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{CELL_SIZE_MESSAGE}</p>}
+          </div>
+          <div>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-xs text-ink-muted">Height (px)</span>
+              <input
+                type="number"
+                min={MIN_CELL_SIZE}
+                max={MAX_CELL_SIZE}
+                step={1}
+                aria-label="Cell height in pixels"
+                aria-describedby={gridSizeNotesId}
+                className={inputCls}
+                value={cellHeightInput}
+                onChange={handleCellHeight}
+                onBlur={() => {
+                  if (parseCellSize(cellHeightInput) === null) {
+                    setCellHeightInput(String(Math.round(tuning.cellHeight)));
+                    setCellHeightWarn(false);
+                  }
+                }}
+              />
+            </label>
+            {cellHeightWarn && <p role="status" className="mt-0.5 text-xs text-red-500">{CELL_SIZE_MESSAGE}</p>}
+          </div>
+        </div>
+        <div id={gridSizeNotesId} className="mt-1.5 flex flex-col gap-0.5 text-xs">
+          <p className="text-ink-muted">The grid is {gridSizeText(gridSize)}.</p>
+          {scrollsOnPhone(gridSize) && (
+            <p className="text-amber-700">
+              Wider than Qualtrics' phone view ({PHONE_WIDTH} px): respondents on phones scroll sideways.
+            </p>
+          )}
+          {Math.min(tuning.cellWidth, tuning.cellHeight) < MIN_TAP_SIZE && (
+            <p className="text-amber-700">Cells smaller than {MIN_TAP_SIZE} px are hard to tap on a phone.</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <span id={scrollStartCaptionId} className="text-[10px] font-bold tracking-widest text-ink-faint">
+          ON A NARROW SCREEN, START AT
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby={scrollStartCaptionId}
+          aria-describedby={scrollStartHintId}
+          className="mt-1 flex flex-wrap gap-x-4 gap-y-1"
+        >
+          {SCROLL_STARTS.map((s) => (
+            <label key={s.value} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-ink">
+              <input
+                type="radio"
+                name={scrollStartGroup}
+                checked={scrollStart === s.value}
+                // The center is the default, which a survey stores as no choice.
+                onChange={() => update({ scrollStart: s.value === "left" ? "left" : undefined })}
+                className="h-3.5 w-3.5"
+              />
+              {s.label}
+            </label>
+          ))}
+        </div>
+        <p id={scrollStartHintId} className="mt-1 text-xs text-ink-muted">
+          When the grid is wider than the screen, respondents see this part first.
+        </p>
+      </div>
+
       <label className="flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
@@ -382,7 +542,7 @@ const QuestionGridForm: React.FC = () => {
           onChange={(v) => update({ backgroundImageUrl: v })}
           // The background fills the whole grid frame, so keep enough pixels
           // for it to stay sharp on high-density screens.
-          maxDim={2 * Math.max(config.tuning.previewWidth, config.tuning.previewHeight)}
+          maxDim={backgroundImageMaxDim(gridSize)}
         />
       </div>
 

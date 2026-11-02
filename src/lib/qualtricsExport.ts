@@ -1,4 +1,5 @@
 import { GridConfig } from "../grid-types";
+import { cellSizedTuning, gridPixelSize } from "./gridSize";
 import { respondentTextsFor } from "./respondentTexts";
 
 export interface QualtricsExportOptions {
@@ -113,11 +114,18 @@ export function buildQualtricsSnippet(
   const embeddedDataField = options.embeddedDataField ?? "GridAssignments";
   const prefillsField = options.prefillsField ?? "GridPrefills";
   const responsesField = options.responsesField ?? "GridResponses";
+  // The grid's size follows from its cells, rows and columns. A survey saved
+  // before cell sizes, if it reaches here without normalizeConfig, gets the
+  // cell size it had, so its grid keeps its pixel size.
+  const tuning = cellSizedTuning(config.tuning, config.layout.rows, config.layout.cols);
+  const gridSize = gridPixelSize({ layout: config.layout, tuning });
   const exportConfig = {
     // A question made only of spaces counts as blank, so the script shows
     // the wording written in Qualtrics instead of an empty line.
     layout: { ...config.layout, questionText: exportedQuestionText(config.layout.questionText) },
-    tuning: config.tuning,
+    // The script sizes the grid's frame with gridWidth and gridHeight; the
+    // cells share it out evenly, so each gets cellWidth × cellHeight px.
+    tuning: { ...tuning, gridWidth: gridSize.width, gridHeight: gridSize.height },
     // The grid's own wording for the texts around it goes in once, merged
     // with GRIDDY's English, as `texts` below.
     survey: { ...config.survey, respondentTexts: undefined },
@@ -1426,6 +1434,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			chip.draggable = true;
 			var target = drop ? cellUnder(e.clientX, e.clientY) : null;
 			if (target && target.ondrop) {
+				// A label dropped in the grid is the respondent using it.
+				holdStart();
 				target.ondrop(touchDragEvent(value));
 			} else if (state.over && state.over.ondragleave) {
 				state.over.ondragleave(touchDragEvent(value));
@@ -1644,9 +1654,14 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		computePrefills(totalCellsCount, centerRowVal, centerColVal);
 	}
 
+	// The grid's designed size, from its cells, rows and columns. The cells
+	// below share it out evenly, so each keeps its designed size. Its 1 px
+	// border goes outside that size, also in Qualtrics themes that size every
+	// element with box-sizing: border-box, which would squeeze the cells.
 	var wrapper = document.createElement("div");
-	wrapper.style.width = cfg.tuning.previewWidth + "px";
-	wrapper.style.height = cfg.tuning.previewHeight + "px";
+	wrapper.style.boxSizing = "content-box";
+	wrapper.style.width = cfg.tuning.gridWidth + "px";
+	wrapper.style.height = cfg.tuning.gridHeight + "px";
 	wrapper.style.border = "1px solid #e2dccf";
 	wrapper.style.backgroundColor = "#f3efe6";
 	wrapper.style.overflow = "auto";
@@ -1977,6 +1992,43 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		setEdgeBadge(rightEdge, hidden.right);
 	}
 
+	// A grid wider than the screen starts scrolled to its middle, unless the
+	// researcher chose its left edge; a grid that fits does not scroll. Until
+	// the respondent first uses the grid, it goes back to that start whenever
+	// the layout changes: Qualtrics can settle the page a little narrower
+	// after the grid first appears, display logic can show a grid that was
+	// hidden, and a phone can turn. The respondent uses the grid by pressing,
+	// touching, scrolling or typing in its frame (the edge arrows included),
+	// dropping a label in it, scrolling it any other way, or pressing Show
+	// me. From then on the script never moves it.
+	var startAtLeft = cfg.layout.scrollStart === "left";
+	var startHeld = false;
+	// What the start last saw and did, to tell its own scrolling from the
+	// respondent's: the room to scroll, and where it put the grid.
+	var startRoom = -1;
+	var startLeft = 0;
+	function holdStart() {
+		startHeld = true;
+	}
+	function placeStart() {
+		// A grid hidden or not laid out yet waits for the next change.
+		if (startHeld || !isDisplayed() || !(scroller.clientWidth > 0)) return;
+		startRoom = scroller.scrollWidth - scroller.clientWidth;
+		startLeft = startRoom > 1 && !startAtLeft ? Math.round(startRoom / 2) : 0;
+		scroller.scrollLeft = startLeft;
+	}
+	// A scroll that leaves the grid somewhere the start did not put it is the
+	// respondent's, unless the room to scroll changed: a frame that widens
+	// moves the grid itself, and the start then places it again.
+	function noticeScroll() {
+		if (startHeld || startRoom < 0) return;
+		if (scroller.scrollWidth - scroller.clientWidth !== startRoom) placeStart();
+		else if (Math.abs(scroller.scrollLeft - startLeft) > 1) holdStart();
+	}
+	["pointerdown", "touchstart", "wheel", "keydown", "click", "drop"].forEach(function (type) {
+		frame.addEventListener(type, holdStart, { capture: true, passive: true });
+	});
+
 	var controls = document.createElement("div");
 	controls.style.marginTop = "10px";
 	controls.style.display = "flex";
@@ -2237,6 +2289,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	showMeBtn.onclick = function () {
+		holdStart();
 		var missing = unfilledKeys();
 		if (missing.length === 0) return;
 		var target = cellEls[firstOutOfView(missing)];
@@ -2284,6 +2337,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	container.appendChild(controls);
 
 	scroller.addEventListener("scroll", function () {
+		noticeScroll();
 		updateIndicators();
 		if (reminderShown && reminder.style.display !== "none") {
 			var missing = unfilledKeys();
@@ -2293,6 +2347,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	// Resizing, and display logic showing or hiding the grid, can change
 	// what is on screen.
 	function onLayoutChange() {
+		placeStart();
 		updateIndicators();
 		syncPage();
 	}
@@ -2302,8 +2357,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 		layoutObserver.observe(scroller);
 		layoutObserver.observe(container);
 	}
-	updateIndicators();
-	syncPage();
+	onLayoutChange();
 	setTimeout(onLayoutChange, 400);
 });
 

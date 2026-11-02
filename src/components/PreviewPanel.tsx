@@ -3,6 +3,7 @@ import PreviewViewChoice, { type PreviewViewOption } from "./PreviewViewChoice";
 import RespondentPreview from "./RespondentPreview";
 import { useEditor } from "../EditorContext";
 import { LayerMode, WeightEntry } from "../grid-types";
+import { GRID_BORDERS, gridPixelSize, gridSizeText } from "../lib/gridSize";
 import {
   DESIGN_VIEWS,
   DESIGN_VIEW_STORAGE_KEY,
@@ -514,14 +515,22 @@ export const PreviewPanel: React.FC = () => {
         ? "Clicks here change the pre-fills every respondent sees. Try answering in Respondent preview."
         : "Sample preview — each respondent gets an independent draw.";
 
-  // 100% draws the grid at its designed size, as respondents see it. Fit
-  // stretches or shrinks the cells to the panel's width; text keeps its size.
+  // 100% draws the grid at its designed size, as respondents see it: its
+  // cells, rows and columns make that size. Fit only shrinks: in a narrower
+  // panel the cells shrink to its width, keeping the grid's shape, and text
+  // keeps its size; in a wider one the grid stays at 100%. Fit's frame is
+  // border-box (Tailwind's default), so its width and shape count its 1 px
+  // borders.
+  const gridSize = gridPixelSize(config);
+  const framedWidth = gridSize.width + GRID_BORDERS;
+  const framedHeight = gridSize.height + GRID_BORDERS;
   const designGridSize: React.CSSProperties =
     designView === "full"
-      ? { width: tuning.previewWidth, height: tuning.previewHeight, boxSizing: "content-box" }
-      : { width: "100%", aspectRatio: `${tuning.previewWidth} / ${tuning.previewHeight}` };
-  // At 100%, the grid and its 1 px borders are wider than the panel.
-  const designTooNarrow = designStageWidth > 0 && designStageWidth < tuning.previewWidth + 2;
+      ? { width: gridSize.width, height: gridSize.height, boxSizing: "content-box" }
+      : { width: "100%", maxWidth: framedWidth, aspectRatio: `${framedWidth} / ${framedHeight}` };
+  // At 100%, the grid and its 1 px borders are wider than the panel; Fit
+  // then scales it down.
+  const designTooNarrow = designStageWidth > 0 && designStageWidth < framedWidth;
 
   return (
     <>
@@ -558,7 +567,7 @@ export const PreviewPanel: React.FC = () => {
         {previewTab === "respondent" ? (
           <RespondentPreview
             snippet={qualtricsSnippet}
-            gridWidth={tuning.previewWidth}
+            gridWidth={gridSize.width}
             view={respondentView}
             onViewChange={setRespondentView}
           />
@@ -736,7 +745,9 @@ export const PreviewPanel: React.FC = () => {
         />
         {designView === "fit" ? (
           <p className="text-xs text-ink-muted">
-            Scaled to fit this panel. Respondents see the grid at {tuning.previewWidth} × {tuning.previewHeight} px.
+            {designTooNarrow
+              ? `Scaled to fit this panel. Respondents see the grid at ${gridSizeText(gridSize)}.`
+              : "The whole grid fits at full size."}
           </p>
         ) : (
           designTooNarrow && (
