@@ -17,7 +17,7 @@ changes; it is the one place that says where the project stands._
 ## Health (checked 2 November 2026)
 
 - `main` is at `fbec42e` (PR 17, merged 1 November). Its build, its 186 tests in 13 files and lint passed locally on Node 24 and in CI on Node 22 before the merge.
-- The 2 November changes (on a branch from `main`, not merged yet) pass `npm run build`, `npm test` (307 tests in 18 files) and `npm run lint` locally on Node 24. With them the main bundle is 504 kB, so the build prints Vite's "Some chunks are larger than 500 kB" warning; it still passes.
+- The 2 November changes (on a branch from `main`, not merged yet) pass `npm run build`, `npm test` (309 tests in 18 files) and `npm run lint` locally on Node 24. With them the main bundle is 504 kB, so the build prints Vite's "Some chunks are larger than 500 kB" warning; it still passes.
 - The live site serves `index.html` and its assets under `/GRIDDY/`; deep links such as `/GRIDDY/history` load the app through `404.html` (the HTTP status is 404, which is expected on GitHub Pages).
 - CI (`.github/workflows/ci.yml`) runs build, tests and lint on every pull request and every push to `main`.
 - Repository settings: description and seven topics set, homepage field points at the live app, Issues enabled (none open). `main` is not protected and the merged branches have not been deleted; both were declined on 31 October to avoid distractions.
