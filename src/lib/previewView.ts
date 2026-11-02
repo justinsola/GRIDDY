@@ -47,10 +47,11 @@ export function usePreviewView<T extends string>(
 
 /**
  * The width an element gives its content, kept up to date as the window or
- * the panel changes. Pass the returned function as the element's ref. The
- * width is 0 until the element has been laid out.
+ * the panel changes. Pass the returned function as the element's ref; the
+ * element itself comes third. The width is 0 until the element has been
+ * laid out.
  */
-export function useClientWidth<T extends HTMLElement>(): [(element: T | null) => void, number] {
+export function useClientWidth<T extends HTMLElement>(): [(element: T | null) => void, number, T | null] {
   const [element, setElement] = useState<T | null>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -68,5 +69,5 @@ export function useClientWidth<T extends HTMLElement>(): [(element: T | null) =>
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [element]);
-  return [setElement, width];
+  return [setElement, width, element];
 }

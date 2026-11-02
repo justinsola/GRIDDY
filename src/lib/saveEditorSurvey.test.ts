@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedRecord } from "../EditorContext";
 import type { GridConfig } from "../grid-types";
 import { MISSING_TITLE_MESSAGE, saveConflictMessage, saveEditorSurvey } from "./saveEditorSurvey";
-import { ExportedSurvey, saveSurvey, STORAGE_FULL_MESSAGE } from "./surveysApi";
+import { ExportedSurvey, importSurveys, saveSurvey, STORAGE_FULL_MESSAGE } from "./surveysApi";
 
 // Only the id and name matter to saving.
 const survey = (name: string) => ({ id: "s1", name }) as GridConfig;
@@ -102,6 +102,15 @@ describe("before replacing a saved survey", () => {
     expect(markSaved).not.toHaveBeenCalled();
   });
 
+  it("asks about a newer backup imported in this tab since, and says it may be one", async () => {
+    const editor = await savedEditor(survey("Map"));
+    const [record] = stored();
+    await importSurveys([{ ...record, name: "Map (backup)", updated_at: "2099-01-01T00:00:00.000Z" }]);
+    const conflict = await saveEditorSurvey(editor, vi.fn());
+    expect(conflict).toEqual({ reason: "savedElsewhere", storedName: "Map (backup)" });
+    expect(saveConflictMessage(conflict!)).toContain("or by importing a backup");
+  });
+
   it("asks about a stored copy this editor never opened or saved", async () => {
     await saveSurvey(survey("Map"));
     const conflict = await saveEditorSurvey({ config: survey("Map"), savedRecord: null }, vi.fn());
@@ -150,7 +159,7 @@ describe("before replacing a saved survey", () => {
       '"Map" is already saved. Replace it, or keep it and save this as a new survey?',
     );
     expect(saveConflictMessage({ reason: "savedElsewhere", storedName: "Map" })).toBe(
-      '"Map" was saved in another tab or window after you opened it here. Replace that version, or save this as a new survey?',
+      '"Map" was changed after you opened it here (in another tab or window, or by importing a backup). Replace that version, or save this as a new survey?',
     );
   });
 });

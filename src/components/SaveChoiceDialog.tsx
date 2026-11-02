@@ -3,7 +3,8 @@ import { SaveConflict, saveConflictMessage } from "../lib/saveEditorSurvey";
 
 interface SaveChoiceDialogProps {
   conflict: SaveConflict;
-  /** The button that opened the dialog. Focus goes back to it on close. */
+  /** The button that opened the dialog. Focus goes back to it on close,
+   * unless saving removed it. */
   returnFocusTo: RefObject<HTMLElement>;
   onSaveAsNew: () => void;
   onReplace: () => void;
@@ -28,11 +29,13 @@ export default function SaveChoiceDialog({
   const saveAsNewRef = useRef<HTMLButtonElement>(null);
 
   // Start on the choice that keeps both versions, and give focus back to
-  // the button that opened the dialog when it closes.
+  // the button that opened the dialog when it closes, if it is still there.
   useEffect(() => {
     const opener = returnFocusTo.current;
     saveAsNewRef.current?.focus();
-    return () => opener?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
   }, [returnFocusTo]);
 
   // Escape cancels, like clicking outside. Tab stays on the dialog's buttons.

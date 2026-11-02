@@ -40,8 +40,10 @@ export const CategoryChips: React.FC<Props> = ({
   const open = openIndex != null ? items[openIndex] : null;
 
   // Radios that share a name form one group across the page, so each
-  // editor gives its Layer mode radios a name of its own.
+  // editor gives its Layer mode radios a name of its own. The caption's id
+  // names the group for screen readers.
   const layerModeGroup = `layerMode${useId()}`;
+  const layerModeCaption = `${layerModeGroup}-caption`;
 
   // Names are stored comma-separated, so a comma would split one label into
   // two, and two labels with the same name would share one colour, image and
@@ -204,7 +206,7 @@ export const CategoryChips: React.FC<Props> = ({
                 </span>
               )}
             </label>
-            <label className="flex min-w-[180px] flex-1 flex-col gap-1.5">
+            <div className="flex min-w-[180px] flex-1 flex-col gap-1.5">
               <span className="text-[10px] font-bold tracking-widest text-ink-faint">
                 IMAGE{" "}
                 <span className="font-medium text-[#c2b59c]">optional</span>
@@ -214,7 +216,7 @@ export const CategoryChips: React.FC<Props> = ({
                 onChange={(v) => update(openIndex, { imageUrl: v })}
                 hint={imageHint}
               />
-            </label>
+            </div>
           </div>
 
           <div className="mt-4">
@@ -264,10 +266,13 @@ export const CategoryChips: React.FC<Props> = ({
 
           {showLayerMode && (open.imageUrl ?? "").length > 0 && (
             <div className="mt-4">
-              <span className="mb-2 block text-[10px] font-bold tracking-widest text-ink-faint">
+              <span
+                id={layerModeCaption}
+                className="mb-2 block text-[10px] font-bold tracking-widest text-ink-faint"
+              >
                 LAYER MODE
               </span>
-              <div className="flex gap-4">
+              <div role="radiogroup" aria-labelledby={layerModeCaption} className="flex gap-4">
                 {(["replace", "front", "behind"] as LayerMode[]).map((m) => (
                   <label
                     key={m}

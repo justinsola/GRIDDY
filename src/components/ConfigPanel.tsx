@@ -371,7 +371,7 @@ const QuestionGridForm: React.FC = () => {
         </label>
       )}
 
-      <label className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         <span className="text-[10px] font-bold tracking-widest text-ink-faint">
           BACKGROUND IMAGE
         </span>
@@ -383,7 +383,7 @@ const QuestionGridForm: React.FC = () => {
           // for it to stay sharp on high-density screens.
           maxDim={2 * Math.max(config.tuning.previewWidth, config.tuning.previewHeight)}
         />
-      </label>
+      </div>
 
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-bold tracking-widest text-ink-faint">
@@ -819,9 +819,10 @@ export const ConfigPanel: React.FC = () => {
             editorTitle="EDITING LABEL"
             showClearAll
             // Reactions have no Layer mode: the exported grid always lays a
-            // reaction's picture over the whole cell, and ignores a layer mode
-            // saved with a label before. The hint says what respondents see.
-            imageHint="Once a respondent reacts, this picture covers the whole pre-filled cell. A transparent PNG lets the cell's own picture show through. Dropdown per cell shows only the label's name."
+            // reaction's picture over the cell, scaled to fit inside it, and
+            // ignores a layer mode saved with a label before. The hint says
+            // what respondents see.
+            imageHint="Once a respondent reacts, this picture is drawn over the pre-filled cell, scaled to fit inside it. A transparent PNG lets the cell's own picture show through. Dropdown per cell shows only the label's name."
           />
         </div>
       </div>

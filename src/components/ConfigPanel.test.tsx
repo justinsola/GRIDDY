@@ -78,8 +78,26 @@ it("offers Layer mode for a category's picture but not for a reaction's", () => 
   expect(label.textContent).not.toContain("LAYER MODE");
   expect(label.querySelectorAll('input[type="radio"]')).toHaveLength(0);
   // The hint says what the exported grid does with a reaction's picture.
-  expect(label.textContent).toContain("Once a respondent reacts, this picture covers the whole pre-filled cell.");
+  expect(label.textContent).toContain(
+    "Once a respondent reacts, this picture is drawn over the pre-filled cell, scaled to fit inside it.",
+  );
+  expect(label.textContent).toContain("A transparent PNG lets the cell's own picture show through.");
   expect(label.textContent).toContain("Dropdown per cell shows only the label's name.");
+});
+
+it("opens no file picker from an image's caption, and names each image's address box", () => {
+  act(() => root.render(<EditorProvider><ConfigPanel /></EditorProvider>));
+  clickButton("Family×");
+  const captions = Array.from(host.querySelectorAll("span")).filter(
+    (span) => span.textContent === "BACKGROUND IMAGE" || span.textContent === "IMAGE optional",
+  );
+  expect(captions).toHaveLength(2);
+  const picked = vi.fn();
+  host.querySelectorAll('input[type="file"]').forEach((input) => input.addEventListener("click", picked));
+  for (const caption of captions) act(() => caption.click());
+  expect(picked).not.toHaveBeenCalled();
+  const addresses = Array.from(host.querySelectorAll('input[type="url"]'));
+  expect(addresses.map((input) => input.getAttribute("aria-label"))).toEqual(["Image URL", "Image URL"]);
 });
 
 it("says under the question box where respondents' wording comes from", () => {

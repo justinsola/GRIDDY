@@ -94,6 +94,10 @@ export default function CombineSurveysPage() {
   // Set while the dialog asks whether to replace the saved survey.
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const saveEditorButton = useRef<HTMLButtonElement>(null);
+  const downloadButton = useRef<HTMLButtonElement>(null);
+  // Set when the editor's changes are saved, which removes the button that
+  // saved them: focus then moves on to Download rather than to the page.
+  const [focusDownload, setFocusDownload] = useState(false);
   // Surveys to download as saved, leaving out the editor's unsaved changes.
   const [savedCopyIds, setSavedCopyIds] = useState<string[]>([]);
 
@@ -105,6 +109,12 @@ export default function CombineSurveysPage() {
       .catch((e) => setError((e as Error).message))
       .finally(() => setFetching(false));
   }, []);
+
+  useEffect(() => {
+    if (!focusDownload) return;
+    setFocusDownload(false);
+    downloadButton.current?.focus();
+  }, [focusDownload]);
 
   const addQuestion = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -185,9 +195,10 @@ export default function CombineSurveysPage() {
           beforeMarkSaved: async () => setSurveys((await exportSurveys()).surveys),
         },
       );
-      // A survey renamed or saved in another tab since opens the dialog; a
-      // finished save closes it.
+      // A survey renamed, or whose stored copy changed since, opens the
+      // dialog; a finished save closes it.
       setSaveConflict(found);
+      if (!found) setFocusDownload(true);
     } catch (e) {
       setSaveConflict(null);
       const message = (e as Error).message;
@@ -227,6 +238,8 @@ export default function CombineSurveysPage() {
         `Downloaded a Qualtrics .qsf with ${ordered.length} grid${ordered.length === 1 ? "" : "s"} ` +
           `in the order shown, and ${fieldCount} embedded field${fieldCount === 1 ? "" : "s"}. ` +
           `In Qualtrics: Create a new project → Survey → Get started → "Import a QSF file", then Publish. ` +
+          `If you add questions to a grid's page, keep the grid last and put follow-up questions above it ` +
+          `or on the next page: unless empty cells are allowed, the grid's Next replaces Qualtrics' Next. ` +
           `Results are under Data & Analysis; if a field's column isn't shown, add it with Column chooser → Embedded Data.`,
       );
     } catch (e) {
@@ -438,6 +451,7 @@ export default function CombineSurveysPage() {
         {/* ── Step 3: download ── */}
         <div className="flex items-center gap-3">
           <button
+            ref={downloadButton}
             type="button"
             onClick={handleDownload}
             disabled={

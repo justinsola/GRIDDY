@@ -105,11 +105,14 @@ it("saves the editor's changes without losing the page's choices", async () => {
   type(title, "Wave 1");
   type(field, "map_question");
 
+  act(() => button("Save the editor's changes").focus());
   await act(async () => button("Save the editor's changes").click());
 
   expect(hasUnsavedChanges(editor.state)).toBe(false);
   expect(host.textContent).not.toContain(UNSAVED);
   expect(button("Download .qsf").disabled).toBe(false);
+  // The button that saved is gone; focus moves on to Download.
+  expect(document.activeElement).toBe(button("Download .qsf"));
   expect(title.value).toBe("Wave 1");
   expect(field.value).toBe("map_question");
   const qsf = await downloadQsf();
@@ -165,12 +168,14 @@ it("asks before replacing a survey renamed in the editor, and can save it as a n
   );
   act(() => button("Cancel").click());
   expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(button("Save the editor's changes"));
   expect(window.localStorage.getItem(KEY)).toBe(before);
   expect(host.textContent).toContain(UNSAVED);
 
   await act(async () => button("Save the editor's changes").click());
   await act(async () => button("Save as new survey").click());
   expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(button("Download .qsf"));
   expect(stored().map((s) => s.name)).toEqual(["Map", "Map v2"]);
   expect(stored()[0].config.layout.questionText).toBe("Saved question");
   expect(hasUnsavedChanges(editor.state)).toBe(false);
@@ -193,13 +198,26 @@ it("asks before replacing a copy saved in another tab, and can replace it", asyn
   );
 
   await act(async () => button("Save the editor's changes").click());
-  expect(dialog()!.textContent).toContain('"Map" was saved in another tab or window');
+  expect(dialog()!.textContent).toContain('"Map" was changed after you opened it here (in another tab or window');
   await act(async () => button("Replace").click());
   expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(button("Download .qsf"));
   expect(stored()).toHaveLength(1);
   expect(stored()[0].config.layout.questionText).toBe("Edited question");
   expect(host.textContent).not.toContain(UNSAVED);
   expect(button("Download .qsf").disabled).toBe(false);
+});
+
+it("tells researchers to keep each grid last on its page in Qualtrics", async () => {
+  act(() => root.render(page(false)));
+  await saveSurvey({ ...editor.state.config, id: "map", name: "Map" });
+  await act(async () => root.render(page(true)));
+  act(() => button("+ Add").click());
+  await downloadQsf();
+  expect(host.textContent).toContain(
+    `then Publish. If you add questions to a grid's page, keep the grid last and put follow-up questions above it ` +
+      `or on the next page: unless empty cells are allowed, the grid's Next replaces Qualtrics' Next. Results are`,
+  );
 });
 
 it("names a grid's fields after the field name ending set in its export dialog", async () => {

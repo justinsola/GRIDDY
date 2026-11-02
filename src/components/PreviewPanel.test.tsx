@@ -68,7 +68,9 @@ it("switches from coordinate-based design to the exported respondent renderer an
 
 it("keeps script-like survey text from escaping the preview bootstrap", () => {
   const snippet = 'var label = "</script><script>unexpected()</script>";';
-  act(() => root.render(<RespondentPreview snippet={snippet} gridWidth={550} />));
+  act(() =>
+    root.render(<RespondentPreview snippet={snippet} gridWidth={550} view="desktop" onViewChange={() => {}} />),
+  );
   const html = host.querySelector("iframe")!.srcdoc;
   const parsed = new DOMParser().parseFromString(html, "text/html");
   expect(parsed.querySelectorAll("script")).toHaveLength(1);
@@ -142,6 +144,17 @@ it("names an experiment's recorded fields and says where answers appear", () => 
   );
   expect(dialog.textContent).toContain("Answers appear under Data & Analysis with the __js_ names listed above.");
   expect(dialog.textContent).toContain("add it with Column chooser → Embedded Data");
+});
+
+it("tells researchers to keep the grid last on its page in Qualtrics", () => {
+  renderPanel();
+  click("Export to Qualtrics");
+  const steps = Array.from(exportDialog().dialog.querySelectorAll("ol > li")).map((step) => step.textContent);
+  expect(steps[2]).toContain("click Create project.");
+  expect(steps[3]).toBe(
+    "If you add questions to the grid's page, keep the grid last and put follow-up questions above it or on the next page: unless empty cells are allowed, the grid's Next replaces Qualtrics' Next.",
+  );
+  expect(steps[4]).toContain("Publish");
 });
 
 it("draws the design grid at its designed size until Fit is chosen, and remembers the choice", () => {
@@ -329,6 +342,27 @@ it("sizes the respondent frame to its page in every view", () => {
   expect(frame.parentElement!.style.height).toBe("653px");
 });
 
+it("shows the zoomed-out page from its top left corner after Desktop was scrolled", () => {
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(456);
+  renderPanel();
+  click("Respondent preview");
+  const stage = host.querySelector("iframe")!.parentElement!;
+  expect(stage.className).toBe("overflow-x-auto");
+  // Scrolled sideways by the researcher, or by a reminder in the page.
+  stage.scrollLeft = 114;
+  stage.scrollTop = 20;
+
+  click("Fit");
+  // The stage clips instead of scrolling; browsers without overflow: clip
+  // use hidden, so the offset left from Desktop is reset too.
+  expect(stage.className).toBe("overflow-hidden overflow-clip");
+  expect(stage.scrollLeft).toBe(0);
+  expect(stage.scrollTop).toBe(0);
+
+  click("Desktop");
+  expect(stage.className).toBe("overflow-x-auto");
+});
+
 it("starts both previews at full size when this browser's storage is blocked", () => {
   const blocked = () => {
     throw new DOMException("Storage is blocked", "SecurityError");
@@ -343,6 +377,23 @@ it("starts both previews at full size when this browser's storage is blocked", (
   expect(isPressed("Desktop")).toBe(true);
   click("Phone");
   expect(isPressed("Phone")).toBe(true);
+});
+
+it("keeps each preview's view while the other is shown when this browser's storage is blocked", () => {
+  const blocked = () => {
+    throw new DOMException("Storage is blocked", "SecurityError");
+  };
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(blocked);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
+  renderPanel();
+  click("Fit");
+  click("Respondent preview");
+  click("Phone");
+  click("Design preview");
+  expect(isPressed("Fit")).toBe(true);
+  click("Respondent preview");
+  expect(isPressed("Phone")).toBe(true);
+  expect(host.querySelector("iframe")!.style.width).toBe("377px");
 });
 
 it("runs the grid's own words for respondents in the respondent preview", () => {

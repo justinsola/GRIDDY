@@ -125,6 +125,17 @@ it("drops spaces at the ends of a name when the field is left", () => {
   ]);
 });
 
+it("names the Layer mode radios as one group for screen readers", () => {
+  const pictured: ChipItem[] = [
+    { name: "Family", color: "#ff0000", imageUrl: "https://example.com/family.png" },
+  ];
+  act(() => root.render(<SavedLabels initial={pictured} onChange={vi.fn()} showLayerMode />));
+  act(() => Array.from(host.querySelectorAll("button")).find((b) => b.textContent === "Family×")!.click());
+  const group = host.querySelector('[role="radiogroup"]')!;
+  expect(document.getElementById(group.getAttribute("aria-labelledby")!)!.textContent).toBe("LAYER MODE");
+  expect(group.querySelectorAll('input[type="radio"]')).toHaveLength(3);
+});
+
 it("gives each editor its own Layer mode radios", () => {
   const pictured: ChipItem[] = [
     { name: "Family", color: "#ff0000", imageUrl: "https://example.com/family.png" },

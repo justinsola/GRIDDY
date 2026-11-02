@@ -188,7 +188,7 @@ describe("before replacing a saved survey", () => {
     );
     await clickSave();
     expect(document.getElementById(dialog()!.getAttribute("aria-describedby")!)!.textContent).toBe(
-      '"Map (final)" was saved in another tab or window after you opened it here. Replace that version, or save this as a new survey?',
+      '"Map (final)" was changed after you opened it here (in another tab or window, or by importing a backup). Replace that version, or save this as a new survey?',
     );
     expect(dialogButton("Replace").getAttribute("aria-label")).toBe('Replace "Map (final)"');
   });

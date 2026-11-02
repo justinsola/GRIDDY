@@ -6,8 +6,9 @@ import { findSurvey, saveSurvey, SurveyMeta } from "./surveysApi";
 export const MISSING_TITLE_MESSAGE = "Please enter a survey title before saving.";
 
 /** Why a save stopped to ask first: the survey was renamed since it was
- * opened or last saved, or its stored copy was saved in another tab or
- * window since then. `storedName` is the stored copy's name. */
+ * opened or last saved, or its stored copy changed since then, saved in
+ * another tab or window or replaced by importing a backup. `storedName` is
+ * the stored copy's name. */
 export interface SaveConflict {
   reason: "renamed" | "savedElsewhere";
   storedName: string;
@@ -20,7 +21,7 @@ export type SaveChoice = "replace" | "saveAsNew";
 export function saveConflictMessage({ reason, storedName }: SaveConflict): string {
   return reason === "renamed"
     ? `"${storedName}" is already saved. Replace it, or keep it and save this as a new survey?`
-    : `"${storedName}" was saved in another tab or window after you opened it here. Replace that version, or save this as a new survey?`;
+    : `"${storedName}" was changed after you opened it here (in another tab or window, or by importing a backup). Replace that version, or save this as a new survey?`;
 }
 
 /** Whether saving would replace a stored copy the researcher may want to
@@ -48,8 +49,9 @@ async function findSaveConflict(
  * Saved surveys are listed by name, so a survey needs a title first.
  *
  * Saving replaces the stored survey with the editor's id. If the survey was
- * renamed since it was opened or last saved, or saved in another tab since,
- * nothing is saved: the promise resolves to the SaveConflict to ask about.
+ * renamed since it was opened or last saved, or its stored copy changed
+ * since (in another tab, or by importing a backup), nothing is saved: the
+ * promise resolves to the SaveConflict to ask about.
  * Call again with the researcher's answer as `choice`: "replace", or
  * "saveAsNew", which stores the survey under a new id and leaves the stored
  * one as it is. `markSaved` gets the record the survey was stored as.

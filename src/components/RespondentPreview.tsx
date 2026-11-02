@@ -1,12 +1,6 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import PreviewViewChoice, { type PreviewViewOption } from "./PreviewViewChoice";
-import {
-  RESPONDENT_VIEWS,
-  RESPONDENT_VIEW_STORAGE_KEY,
-  type RespondentView,
-  useClientWidth,
-  usePreviewView,
-} from "../lib/previewView";
+import { type RespondentView, useClientWidth } from "../lib/previewView";
 
 /** The screen width the Phone view shows, in CSS pixels. */
 const PHONE_WIDTH = 375;
@@ -61,15 +55,18 @@ interface RespondentPreviewProps {
   snippet: string;
   /** The grid's designed width in pixels (tuning.previewWidth). */
   gridWidth: number;
+  /** How the page is shown. The editor keeps the choice, so it lasts while
+   * the design preview is shown, even when this browser cannot store it. */
+  view: RespondentView;
+  onViewChange: (view: RespondentView) => void;
 }
 
 /** Run the same renderer we export, isolated from the editor and its storage. */
-export default function RespondentPreview({ snippet, gridWidth }: RespondentPreviewProps) {
+export default function RespondentPreview({ snippet, gridWidth, view, onViewChange }: RespondentPreviewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(550);
   const [attempt, setAttempt] = useState(0);
-  const [view, setView] = usePreviewView(RESPONDENT_VIEW_STORAGE_KEY, RESPONDENT_VIEWS);
-  const [stageRef, stageWidth] = useClientWidth<HTMLDivElement>();
+  const [stageRef, stageWidth, stage] = useClientWidth<HTMLDivElement>();
   const documentHtml = useMemo(() => previewDocument(snippet), [snippet]);
 
   // The width the page needs to show the grid at full size. Switching views
@@ -77,6 +74,17 @@ export default function RespondentPreview({ snippet, gridWidth }: RespondentPrev
   const fullWidth = gridWidth + PAGE_ROOM + FRAME_BORDERS;
   const tooNarrow = stageWidth > 0 && stageWidth < fullWidth;
   const zoom = view === "fit" && tooNarrow ? stageWidth / fullWidth : 1;
+
+  // Fit shows the whole page from its top left corner, on a stage that
+  // clips rather than scrolls (Tailwind writes overflow-clip after
+  // overflow-hidden). A browser without overflow: clip falls back to
+  // hidden, which would keep an offset left by scrolling Desktop sideways
+  // or by a reminder, and crop the page where it cannot be scrolled back.
+  useLayoutEffect(() => {
+    if (zoom >= 1 || !stage) return;
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+  }, [zoom, stage]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -122,7 +130,7 @@ export default function RespondentPreview({ snippet, gridWidth }: RespondentPrev
         label="Respondent preview size"
         options={VIEW_OPTIONS}
         value={view}
-        onChange={setView}
+        onChange={onViewChange}
       />
       {note && <p className="text-xs text-ink-muted">{note}</p>}
       {view === "phone" && (
@@ -132,7 +140,7 @@ export default function RespondentPreview({ snippet, gridWidth }: RespondentPrev
       )}
       <div
         ref={stageRef}
-        className={zoom < 1 ? "overflow-hidden" : "overflow-x-auto"}
+        className={zoom < 1 ? "overflow-hidden overflow-clip" : "overflow-x-auto"}
         style={zoom < 1 ? { height: Math.ceil(height * zoom) } : undefined}
       >
         <iframe

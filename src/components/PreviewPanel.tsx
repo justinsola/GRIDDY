@@ -6,6 +6,8 @@ import { LayerMode, WeightEntry } from "../grid-types";
 import {
   DESIGN_VIEWS,
   DESIGN_VIEW_STORAGE_KEY,
+  RESPONDENT_VIEWS,
+  RESPONDENT_VIEW_STORAGE_KEY,
   type DesignView,
   useClientWidth,
   usePreviewView,
@@ -195,6 +197,12 @@ export const PreviewPanel: React.FC = () => {
   // picks Fit; the area around it scrolls when the panel is narrower.
   const [designView, setDesignView] = usePreviewView(DESIGN_VIEW_STORAGE_KEY, DESIGN_VIEWS);
   const [designStageRef, designStageWidth] = useClientWidth<HTMLDivElement>();
+  // Kept here, where it outlasts a switch to the design preview, so that a
+  // browser that cannot store the choice still keeps it until a reload.
+  const [respondentView, setRespondentView] = usePreviewView(
+    RESPONDENT_VIEW_STORAGE_KEY,
+    RESPONDENT_VIEWS,
+  );
 
   useEffect(() => {
     if (!categories.length) {
@@ -548,7 +556,12 @@ export const PreviewPanel: React.FC = () => {
         </div>
 
         {previewTab === "respondent" ? (
-          <RespondentPreview snippet={qualtricsSnippet} gridWidth={tuning.previewWidth} />
+          <RespondentPreview
+            snippet={qualtricsSnippet}
+            gridWidth={tuning.previewWidth}
+            view={respondentView}
+            onViewChange={setRespondentView}
+          />
         ) : (
           <>
         {/* What a click in the design grid does right now (in weighted mode,
@@ -1156,6 +1169,12 @@ export const PreviewPanel: React.FC = () => {
                         .qsf
                       </code>
                       , and click <strong>Create project</strong>.
+                    </li>
+                    <li>
+                      If you add questions to the grid&apos;s page, keep the
+                      grid last and put follow-up questions above it or on the
+                      next page: unless empty cells are allowed, the
+                      grid&apos;s Next replaces Qualtrics&apos; Next.
                     </li>
                     <li>
                       <strong>Publish</strong>. Then the grid renders and
