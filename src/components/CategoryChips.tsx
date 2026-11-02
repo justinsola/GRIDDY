@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { LayerMode } from "../grid-types";
 import ImageInput from "./ImageInput";
 
@@ -38,6 +38,10 @@ export const CategoryChips: React.FC<Props> = ({
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const open = openIndex != null ? items[openIndex] : null;
+
+  // Radios that share a name form one group across the page, so each
+  // editor gives its Layer mode radios a name of its own.
+  const layerModeGroup = `layerMode${useId()}`;
 
   // Names are stored comma-separated, so a comma would split one label into
   // two, and two labels with the same name would share one colour, image and
@@ -271,7 +275,7 @@ export const CategoryChips: React.FC<Props> = ({
                   >
                     <input
                       type="radio"
-                      name={`layerMode-${openIndex}`}
+                      name={layerModeGroup}
                       checked={(open.layerMode ?? "replace") === m}
                       onChange={() => update(openIndex, { layerMode: m })}
                       className="h-3.5 w-3.5"

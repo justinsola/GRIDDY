@@ -60,11 +60,20 @@ it("keeps commas out of label names", () => {
 });
 
 // Feeds each change back in, as the editor does, so the chips show what was saved.
-function SavedLabels({ initial, onChange }: { initial: ChipItem[]; onChange: (items: ChipItem[]) => void }) {
+function SavedLabels({
+  initial,
+  onChange,
+  showLayerMode,
+}: {
+  initial: ChipItem[];
+  onChange: (items: ChipItem[]) => void;
+  showLayerMode?: boolean;
+}) {
   const [list, setList] = useState(initial);
   return (
     <CategoryChips
       items={list}
+      showLayerMode={showLayerMode}
       onChange={(next) => {
         onChange(next);
         setList(next);
@@ -114,4 +123,32 @@ it("drops spaces at the ends of a name when the field is left", () => {
     { name: "Family", color: "#ff0000" },
     { name: "Neighbours", color: "#00ff00" },
   ]);
+});
+
+it("gives each editor its own Layer mode radios", () => {
+  const pictured: ChipItem[] = [
+    { name: "Family", color: "#ff0000", imageUrl: "https://example.com/family.png" },
+  ];
+  act(() =>
+    root.render(
+      <>
+        <SavedLabels initial={pictured} onChange={vi.fn()} showLayerMode />
+        <SavedLabels initial={pictured} onChange={vi.fn()} showLayerMode />
+      </>,
+    ),
+  );
+  const chips = Array.from(host.querySelectorAll("button")).filter((b) => b.textContent === "Family×");
+  for (const chip of chips) act(() => chip.click());
+  const radios = (choice: string) =>
+    Array.from(host.querySelectorAll<HTMLInputElement>('input[type="radio"]')).filter(
+      (radio) => radio.parentElement!.textContent === choice,
+    );
+  const [firstReplace, secondReplace] = radios("Replace");
+  const [firstFront, secondFront] = radios("Front");
+  expect(firstReplace.name).not.toBe(secondReplace.name);
+  expect([firstReplace.checked, secondReplace.checked]).toEqual([true, true]);
+
+  // Radios sharing one group would uncheck the other editor's choice.
+  act(() => firstFront.click());
+  expect([firstFront.checked, secondFront.checked, secondReplace.checked]).toEqual([true, false, true]);
 });

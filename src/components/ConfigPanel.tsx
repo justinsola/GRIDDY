@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { GRID_SIZE_MESSAGE, parseGridSize } from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
 import { CategoryMeta, ExperimentalConfig, SkipBehavior } from "../grid-types";
@@ -236,6 +236,7 @@ function chipItemsToMeta(items: ChipItem[]): Record<string, CategoryMeta> {
 const QuestionGridForm: React.FC = () => {
   const { state: { config }, dispatch } = useEditor();
   const layout = config.layout;
+  const questionHintId = useId();
 
   const [rowsInput, setRowsInput] = useState(String(layout.rows));
   const [colsInput, setColsInput] = useState(String(layout.cols));
@@ -277,16 +278,24 @@ const QuestionGridForm: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] font-bold tracking-widest text-ink-faint">
-          QUESTION TEXT
-        </span>
-        <textarea
-          className={`${inputCls} min-h-[80px] resize-none`}
-          value={layout.questionText}
-          onChange={(e) => update({ questionText: e.target.value })}
-        />
-      </label>
+      <div>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold tracking-widest text-ink-faint">
+            QUESTION TEXT
+          </span>
+          <textarea
+            className={`${inputCls} min-h-[80px] resize-none`}
+            value={layout.questionText}
+            onChange={(e) => update({ questionText: e.target.value })}
+            aria-describedby={questionHintId}
+          />
+        </label>
+        <p id={questionHintId} className="mt-1 text-xs text-ink-muted">
+          Respondents see this wording. Leave it empty to use the wording
+          written in Qualtrics instead, for example to format or translate it
+          there.
+        </p>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -805,9 +814,11 @@ export const ConfigPanel: React.FC = () => {
             onChange={handleRespLabelChange}
             addLabel="+ Add label"
             editorTitle="EDITING LABEL"
-            showLayerMode
             showClearAll
-            imageHint="Ideally a transparent PNG (no background) so it layers cleanly on top of the cell's image."
+            // Reactions have no Layer mode: the exported grid always lays a
+            // reaction's picture over the whole cell, and ignores a layer mode
+            // saved with a label before. The hint says what respondents see.
+            imageHint="Once a respondent reacts, this picture covers the whole pre-filled cell. A transparent PNG lets the cell's own picture show through. Dropdown per cell shows only the label's name."
           />
         </div>
       </div>
