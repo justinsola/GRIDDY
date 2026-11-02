@@ -1434,6 +1434,8 @@ Qualtrics.SurveyEngine.addOnReady(function()
 			chip.draggable = true;
 			var target = drop ? cellUnder(e.clientX, e.clientY) : null;
 			if (target && target.ondrop) {
+				// A label dropped in the grid is the respondent using it.
+				holdStart();
 				target.ondrop(touchDragEvent(value));
 			} else if (state.over && state.over.ondragleave) {
 				state.over.ondragleave(touchDragEvent(value));
@@ -1653,8 +1655,11 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	// The grid's designed size, from its cells, rows and columns. The cells
-	// below share it out evenly, so each keeps its designed size.
+	// below share it out evenly, so each keeps its designed size. Its 1 px
+	// border goes outside that size, also in Qualtrics themes that size every
+	// element with box-sizing: border-box, which would squeeze the cells.
 	var wrapper = document.createElement("div");
+	wrapper.style.boxSizing = "content-box";
 	wrapper.style.width = cfg.tuning.gridWidth + "px";
 	wrapper.style.height = cfg.tuning.gridHeight + "px";
 	wrapper.style.border = "1px solid #e2dccf";
@@ -1988,20 +1993,41 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	// A grid wider than the screen starts scrolled to its middle, unless the
-	// researcher chose its left edge. This happens once: the first time the
-	// grid is on screen and wider than its frame, so a grid that display logic
-	// hides at first starts there when it appears. After that, resizing, the
-	// respondent's own scrolling, the reminder and Show me never move it back.
+	// researcher chose its left edge; a grid that fits does not scroll. Until
+	// the respondent first uses the grid, it goes back to that start whenever
+	// the layout changes: Qualtrics can settle the page a little narrower
+	// after the grid first appears, display logic can show a grid that was
+	// hidden, and a phone can turn. The respondent uses the grid by pressing,
+	// touching, scrolling or typing in its frame (the edge arrows included),
+	// dropping a label in it, scrolling it any other way, or pressing Show
+	// me. From then on the script never moves it.
 	var startAtLeft = cfg.layout.scrollStart === "left";
-	var startPlaced = false;
-	function placeStart() {
-		if (startPlaced || !isDisplayed()) return;
-		var room = scroller.scrollWidth - scroller.clientWidth;
-		// Not laid out yet, or nothing to scroll: wait for the next change.
-		if (!(scroller.clientWidth > 0) || room <= 1) return;
-		startPlaced = true;
-		if (!startAtLeft) scroller.scrollLeft = Math.round(room / 2);
+	var startHeld = false;
+	// What the start last saw and did, to tell its own scrolling from the
+	// respondent's: the room to scroll, and where it put the grid.
+	var startRoom = -1;
+	var startLeft = 0;
+	function holdStart() {
+		startHeld = true;
 	}
+	function placeStart() {
+		// A grid hidden or not laid out yet waits for the next change.
+		if (startHeld || !isDisplayed() || !(scroller.clientWidth > 0)) return;
+		startRoom = scroller.scrollWidth - scroller.clientWidth;
+		startLeft = startRoom > 1 && !startAtLeft ? Math.round(startRoom / 2) : 0;
+		scroller.scrollLeft = startLeft;
+	}
+	// A scroll that leaves the grid somewhere the start did not put it is the
+	// respondent's, unless the room to scroll changed: a frame that widens
+	// moves the grid itself, and the start then places it again.
+	function noticeScroll() {
+		if (startHeld || startRoom < 0) return;
+		if (scroller.scrollWidth - scroller.clientWidth !== startRoom) placeStart();
+		else if (Math.abs(scroller.scrollLeft - startLeft) > 1) holdStart();
+	}
+	["pointerdown", "touchstart", "wheel", "keydown", "click", "drop"].forEach(function (type) {
+		frame.addEventListener(type, holdStart, { capture: true, passive: true });
+	});
 
 	var controls = document.createElement("div");
 	controls.style.marginTop = "10px";
@@ -2263,6 +2289,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	}
 
 	showMeBtn.onclick = function () {
+		holdStart();
 		var missing = unfilledKeys();
 		if (missing.length === 0) return;
 		var target = cellEls[firstOutOfView(missing)];
@@ -2310,6 +2337,7 @@ Qualtrics.SurveyEngine.addOnReady(function()
 	container.appendChild(controls);
 
 	scroller.addEventListener("scroll", function () {
+		noticeScroll();
 		updateIndicators();
 		if (reminderShown && reminder.style.display !== "none") {
 			var missing = unfilledKeys();

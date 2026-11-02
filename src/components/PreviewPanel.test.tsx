@@ -157,20 +157,33 @@ it("tells researchers to keep the grid last on its page in Qualtrics", () => {
   expect(steps[4]).toContain("Publish");
 });
 
+/** A preview panel narrower than a new survey's 290 px grid and its borders,
+ * and 80% as wide as the respondent preview's page for that grid. */
+const NARROW_PANEL = 248;
+/** The preview panel's width inside its padding on a window 1280 px wide or
+ * wider. */
+const WIDE_PANEL = 576;
+
 it("draws the design grid at its designed size until Fit is chosen, and remembers the choice", () => {
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(WIDE_PANEL);
   renderPanel();
   expect(isPressed("100%")).toBe(true);
-  // A new survey's 3 × 3 grid: cells of 100 × 100 px, 10 px apart.
-  expect(designGrid().style.width).toBe("320px");
-  expect(designGrid().style.height).toBe("320px");
+  // A new survey's 3 × 3 grid: cells of 90 × 90 px, 10 px apart.
+  expect(designGrid().style.width).toBe("290px");
+  expect(designGrid().style.height).toBe("290px");
   expect(designGrid().style.boxSizing).toBe("content-box");
   expect(host.textContent).not.toContain("Scaled to fit");
 
   click("Fit");
   expect(isPressed("Fit")).toBe(true);
+  // Fit only shrinks: the frame, borders included, is never wider than at
+  // 100%, so in this wide panel the grid stays at its designed size.
   expect(designGrid().style.width).toBe("100%");
+  expect(designGrid().style.maxWidth).toBe("292px");
+  expect(designGrid().style.aspectRatio).toBe("292 / 292");
   expect(designGrid().style.height).toBe("");
-  expect(host.textContent).toContain("Scaled to fit this panel. Respondents see the grid at 320 × 320 px.");
+  expect(host.textContent).toContain("The whole grid fits at full size.");
+  expect(host.textContent).not.toContain("Scaled to fit");
   expect(window.localStorage.getItem(DESIGN_VIEW_STORAGE_KEY)).toBe("fit");
 
   act(() => root.unmount());
@@ -181,6 +194,7 @@ it("draws the design grid at its designed size until Fit is chosen, and remember
 });
 
 it("sizes both previews from the grid's cells, rows and columns", () => {
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(WIDE_PANEL);
   renderPanel();
   act(() => editor.dispatch({ type: "updateTuning", patch: { cellWidth: 150, cellHeight: 60 } }));
   act(() => editor.dispatch({ type: "updateLayout", patch: { cols: 4 } }));
@@ -189,9 +203,11 @@ it("sizes both previews from the grid's cells, rows and columns", () => {
   expect(designGrid().style.height).toBe("200px");
 
   click("Fit");
-  // Fit keeps the grid's shape.
-  expect(designGrid().style.aspectRatio).toBe("630 / 200");
-  expect(host.textContent).toContain("Respondents see the grid at 630 × 200 px.");
+  // Fit keeps the shape of the grid and its borders, never draws them wider
+  // than at 100%, and scales them down to this narrower panel.
+  expect(designGrid().style.aspectRatio).toBe("632 / 202");
+  expect(designGrid().style.maxWidth).toBe("632px");
+  expect(host.textContent).toContain("Scaled to fit this panel. Respondents see the grid at 630 × 200 px.");
 
   click("Respondent preview");
   // The grid, its borders and the page's padding.
@@ -258,15 +274,14 @@ it("keeps blocking, dropdown and drag-and-drop cells working at full size", () =
   expect(cell("r1·c3").textContent).toContain("Coworkers");
 });
 
-/** A preview panel narrower than a new survey's 320 px grid. */
-const NARROW_PANEL = 272;
-
-it("says when the design grid is wider than the panel", () => {
+it("says when the design grid is wider than the panel, and that Fit scales it down", () => {
   vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   expect(host.textContent).toContain("Wider than this panel. Scroll sideways, or choose Fit.");
   click("Fit");
   expect(host.textContent).not.toContain("Wider than this panel");
+  expect(host.textContent).toContain("Scaled to fit this panel. Respondents see the grid at 290 × 290 px.");
+  expect(host.textContent).not.toContain("The whole grid fits at full size.");
 });
 
 it("says what a click in the design preview does right now", () => {
@@ -321,17 +336,21 @@ it("shows the respondent preview at full size, on a phone or zoomed to fit, and 
   const frame = () => host.querySelector("iframe")!;
   expect(isPressed("Desktop")).toBe(true);
   // Desktop: nothing zooms the page, and the frame is at least as wide as
-  // the 320 px grid with its borders and the page's padding.
+  // the 290 px grid with its borders and the page's padding.
   expect(frame().srcdoc).not.toContain("zoom");
   expect(frame().style.transform).toBe("");
   expect(frame().style.width).toBe("100%");
-  expect(frame().style.minWidth).toBe("340px");
+  expect(frame().style.minWidth).toBe("310px");
 
   click("Phone");
-  expect(frame().style.width).toBe("377px");
+  // Inside its borders the page is 308 px, and its padding leaves the
+  // question the 292 px that Qualtrics' phone view leaves for the grid.
+  expect(frame().style.width).toBe("308px");
+  expect(frame().style.boxSizing).toBe("content-box");
   expect(frame().style.minWidth).toBe("");
   expect(frame().style.transform).toBe("");
-  expect(host.textContent).toContain("Phone, 375 px wide");
+  expect(host.textContent).toContain("Phone, as Qualtrics' phone view: 292 px for the grid");
+  expect(buttonByText("Phone")!.title).toBe("Full size, as in Qualtrics' phone view: 292 px for the grid");
   expect(window.localStorage.getItem(RESPONDENT_VIEW_STORAGE_KEY)).toBe("phone");
 
   act(() => root.unmount());
@@ -339,7 +358,18 @@ it("shows the respondent preview at full size, on a phone or zoomed to fit, and 
   renderPanel();
   click("Respondent preview");
   expect(isPressed("Phone")).toBe(true);
-  expect(frame().style.width).toBe("377px");
+  expect(frame().style.width).toBe("308px");
+});
+
+it("gives the grid the same 292 px in the Phone view whatever its size", () => {
+  renderPanel();
+  act(() => editor.dispatch({ type: "updateLayout", patch: { cols: 4 } }));
+  click("Respondent preview");
+  const frame = host.querySelector("iframe")!;
+  // Desktop makes room for the 390 px grid; Phone does not.
+  expect(frame.style.minWidth).toBe("410px");
+  click("Phone");
+  expect(frame.style.width).toBe("308px");
 });
 
 it("zooms the respondent preview out when Fit is chosen, and says by how much", () => {
@@ -350,26 +380,29 @@ it("zooms the respondent preview out when Fit is chosen, and says by how much", 
   expect(host.textContent).toContain("Wider than this panel. Scroll sideways, or choose Fit.");
 
   click("Fit");
-  expect(frame.style.width).toBe("340px");
+  expect(frame.style.width).toBe("310px");
   expect(frame.style.transform).toBe("scale(0.8)");
   expect(host.textContent).toContain("Shown at 80% so the whole grid fits. Respondents see it at full size.");
   expect(host.textContent).not.toContain("Wider than this panel");
 });
+
+/** What the respondent preview's page tells the editor: how tall it is. */
+const reportPageHeight = (frame: HTMLIFrameElement, height: number) =>
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "griddy-preview-height", height },
+        source: frame.contentWindow,
+      }),
+    );
+  });
 
 it("sizes the respondent frame to its page in every view", () => {
   vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
   renderPanel();
   click("Respondent preview");
   const frame = host.querySelector("iframe")!;
-  const reportHeight = (height: number) =>
-    act(() => {
-      window.dispatchEvent(
-        new MessageEvent("message", {
-          data: { type: "griddy-preview-height", height },
-          source: frame.contentWindow,
-        }),
-      );
-    });
+  const reportHeight = (height: number) => reportPageHeight(frame, height);
 
   reportHeight(600);
   expect(frame.style.height).toBe("616px");
@@ -381,6 +414,125 @@ it("sizes the respondent frame to its page in every view", () => {
   expect(frame.style.height).toBe("816px");
   // The zoomed-out frame takes up only its shown height.
   expect(frame.parentElement!.style.height).toBe("653px");
+});
+
+it("lets the respondent frame grow as tall as the tallest grid's page", () => {
+  renderPanel();
+  click("Respondent preview");
+  const frame = host.querySelector("iframe")!;
+  // 10 rows of 600 px cells make a page more than 6000 px tall.
+  reportPageHeight(frame, 6400);
+  expect(frame.style.height).toBe("6416px");
+  // The limit only stops a page that keeps growing.
+  reportPageHeight(frame, 50000);
+  expect(frame.style.height).toBe("8092px");
+});
+
+/**
+ * Loads the respondent preview's page into its frame, as a browser does with
+ * srcdoc (jsdom does not), and lays the grid's scroller out by the frame's
+ * width, which jsdom does not do either: the page's padding takes 16 px of
+ * the width inside the frame, and a page scrollbar its own width while there
+ * is one. `relayout` then does what a browser does when that width changes:
+ * it keeps the scroll position within the new room (and fires a scroll event
+ * when that moves it), fires resize when the frame itself was resized, and
+ * calls the ResizeObservers watching the scroller.
+ */
+function loadRespondentPage(frame: HTMLIFrameElement, panelWidth: number, scrollbar: number) {
+  const win = frame.contentWindow as unknown as typeof globalThis;
+  const observed: Array<{ callback: () => void; target: Element }> = [];
+  class FakeResizeObserver {
+    constructor(private callback: () => void) {}
+    observe(target: Element) {
+      observed.push({ callback: this.callback, target });
+    }
+    disconnect() {}
+  }
+  (win as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver;
+  const page = { scrollbar };
+  // Inside the frame: all of a content-box frame's width, or a border-box
+  // frame's width less its borders.
+  const pageWidth = () => {
+    if (frame.style.boxSizing === "content-box") return parseFloat(frame.style.width);
+    const width = frame.style.width.endsWith("px")
+      ? parseFloat(frame.style.width)
+      : Math.max(panelWidth, parseFloat(frame.style.minWidth));
+    return width - 2;
+  };
+  const space = () => pageWidth() - 16 - page.scrollbar;
+  const isScroller = (el: Element) => el.hasAttribute("data-griddy-scroller");
+  // The grid and its 1 px borders.
+  const gridWidth = (el: Element) => parseFloat((el.firstElementChild as HTMLElement).style.width) + 2;
+  const room = (el: Element) => Math.max(0, gridWidth(el) - space());
+  let left = 0;
+  Object.defineProperties(win.HTMLElement.prototype, {
+    clientWidth: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isScroller(this) ? space() : 0;
+      },
+    },
+    scrollWidth: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isScroller(this) ? space() + room(this) : 0;
+      },
+    },
+    scrollLeft: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isScroller(this) ? left : 0;
+      },
+      set(this: HTMLElement, value: number) {
+        if (isScroller(this)) left = Math.max(0, Math.min(Math.round(value), room(this)));
+      },
+    },
+  });
+  const doc = frame.contentDocument!;
+  doc.open();
+  doc.write(frame.srcdoc);
+  doc.close();
+  const scroller = doc.querySelector<HTMLElement>("[data-griddy-scroller]")!;
+  const relayout = (resized: boolean) => {
+    const before = left;
+    left = Math.min(left, room(scroller));
+    if (resized) win.dispatchEvent(new win.Event("resize"));
+    if (left !== before) scroller.dispatchEvent(new win.Event("scroll"));
+    observed.filter((o) => isScroller(o.target)).forEach((o) => o.callback());
+  };
+  const arrows = () =>
+    (["left", "right"] as const).map(
+      (side) => doc.querySelector<HTMLElement>(`[data-griddy-edge="${side}"]`)!.style.display,
+    );
+  return { scroller, page, relayout, arrows };
+}
+
+it("starts a wide grid at its middle in the Phone view after the Desktop view", () => {
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(NARROW_PANEL);
+  renderPanel();
+  // 4 columns of 90 px: 390 px, wider than this panel and than the phone view.
+  act(() => editor.dispatch({ type: "updateLayout", patch: { cols: 4 } }));
+  click("Respondent preview");
+  const frame = host.querySelector("iframe")!;
+  // The page never shows a scrollbar of its own.
+  expect(frame.srcdoc).toContain("html { scrollbar-width: none; } html::-webkit-scrollbar { display: none; }");
+
+  // Desktop is exactly as wide as the grid needs. A scrollbar there for a
+  // moment, as the page had before, makes the grid overflow by its width,
+  // and the grid centres itself in that small room.
+  const { scroller, page, relayout, arrows } = loadRespondentPage(frame, NARROW_PANEL, 15);
+  expect(scroller.scrollLeft).toBe(8);
+  page.scrollbar = 0;
+  relayout(false);
+  expect(scroller.scrollLeft).toBe(0);
+  expect(arrows()).toEqual(["none", "none"]);
+
+  // The grid and its border are 392 px in the phone view's 292 px: 100 px
+  // to scroll, and the middle is 50.
+  click("Phone");
+  relayout(true);
+  expect(scroller.scrollLeft).toBe(50);
+  expect(arrows()).toEqual(["flex", "flex"]);
 });
 
 it("shows the zoomed-out page from its top left corner after Desktop was scrolled", () => {
@@ -434,7 +586,7 @@ it("keeps each preview's view while the other is shown when this browser's stora
   expect(isPressed("Fit")).toBe(true);
   click("Respondent preview");
   expect(isPressed("Phone")).toBe(true);
-  expect(host.querySelector("iframe")!.style.width).toBe("377px");
+  expect(host.querySelector("iframe")!.style.width).toBe("308px");
 });
 
 it("runs the grid's own words for respondents in the respondent preview", () => {

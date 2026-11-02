@@ -127,53 +127,89 @@ const leave = (input: HTMLInputElement) =>
   act(() => {
     input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
   });
-const TOO_WIDE = "Wider than a phone screen: respondents on phones scroll sideways.";
+const TOO_WIDE = "Wider than Qualtrics' phone view (292 px): respondents on phones scroll sideways.";
 const TOO_SMALL = "Cells smaller than 44 px are hard to tap on a phone.";
+const CELL_SIZE_NOTE = "Use a whole number from 20 to 600";
 
 it("only takes a whole number of pixels from 20 to 600 as a cell's width or height", () => {
   renderEditor();
-  expect(cellBox("width").value).toBe("100");
-  expect(cellBox("height").value).toBe("100");
+  expect(cellBox("width").value).toBe("90");
+  expect(cellBox("height").value).toBe("90");
   // Both boxes name what they set and are grouped under CELL SIZE.
   const group = cellBox("width").closest('[role="group"]')!;
   expect(document.getElementById(group.getAttribute("aria-labelledby")!)!.textContent).toBe("CELL SIZE");
-  expect(sizeNotes()).toBe("The grid is 320 × 320 px.");
+  expect(sizeNotes()).toBe("The grid is 290 × 290 px.");
 
-  for (const bad of ["19", "601", "0", "-40", "120.5", "1e2"]) {
+  for (const bad of ["601", "-40", "120.5", "1e2"]) {
     type(cellBox("width"), bad);
-    expect(host.textContent).toContain("Use a whole number from 20 to 600");
-    expect(sizeNotes()).toBe("The grid is 320 × 320 px.");
+    expect(host.textContent).toContain(CELL_SIZE_NOTE);
+    expect(sizeNotes()).toBe("The grid is 290 × 290 px.");
   }
 
   type(cellBox("width"), "150");
-  expect(host.textContent).not.toContain("Use a whole number from 20 to 600");
+  expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
   expect(editor.state.config.tuning.cellWidth).toBe(150);
-  expect(sizeNotes()).toContain("The grid is 470 × 320 px.");
+  expect(sizeNotes()).toContain("The grid is 470 × 290 px.");
   type(cellBox("height"), "80");
   expect(sizeNotes()).toContain("The grid is 470 × 260 px.");
 
   // Leaving the box with an unusable size puts back the last good one.
-  type(cellBox("height"), "10");
+  type(cellBox("height"), "700");
+  expect(host.textContent).toContain(CELL_SIZE_NOTE);
   leave(cellBox("height"));
   expect(cellBox("height").value).toBe("80");
   expect(editor.state.config.tuning.cellHeight).toBe(80);
-  expect(host.textContent).not.toContain("Use a whole number from 20 to 600");
+  expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
 });
 
-it("notes a grid wider than a phone and cells too small to tap", () => {
+it("waits while a cell size is still being typed, and puts back the last good one on leaving", () => {
+  renderEditor();
+  // 150 typed a digit at a time: 1 and 15 are too small, but not wrong yet.
+  for (const typed of ["1", "15"]) {
+    type(cellBox("width"), typed);
+    expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
+    expect(editor.state.config.tuning.cellWidth).toBe(90);
+  }
+  type(cellBox("width"), "150");
+  expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
+  expect(editor.state.config.tuning.cellWidth).toBe(150);
+
+  // Leaving the box while it holds 15 puts back the last good size.
+  type(cellBox("width"), "15");
+  leave(cellBox("width"));
+  expect(cellBox("width").value).toBe("150");
+  expect(editor.state.config.tuning.cellWidth).toBe(150);
+  expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
+
+  for (const typed of ["0", "19", ""]) {
+    type(cellBox("height"), typed);
+    expect(host.textContent).not.toContain(CELL_SIZE_NOTE);
+    leave(cellBox("height"));
+    expect(cellBox("height").value).toBe("90");
+  }
+  expect(editor.state.config.tuning.cellHeight).toBe(90);
+});
+
+it("notes a grid wider than Qualtrics' phone view and cells too small to tap", () => {
   renderEditor();
   const cols = host.querySelectorAll<HTMLInputElement>('input[type="number"]')[1];
-  expect(sizeNotes()).not.toContain(TOO_WIDE);
-  expect(sizeNotes()).not.toContain(TOO_SMALL);
+  // A new survey's 290 px grid and its 1 px border fill the 292 px exactly.
+  expect(sizeNotes()).toBe("The grid is 290 × 290 px.");
 
   type(cols, "4");
-  expect(sizeNotes()).toBe(`The grid is 430 × 320 px.${TOO_WIDE}`);
+  expect(sizeNotes()).toBe(`The grid is 390 × 290 px.${TOO_WIDE}`);
   type(cols, "3");
-  type(cellBox("width"), "106");
-  // 338 px still fits; 341 px does not.
-  expect(sizeNotes()).not.toContain(TOO_WIDE);
-  type(cellBox("width"), "107");
-  expect(sizeNotes()).toContain(TOO_WIDE);
+  type(cellBox("width"), "91");
+  expect(sizeNotes()).toBe(`The grid is 293 × 290 px.${TOO_WIDE}`);
+
+  // One column of cells reaches the exact edge. Like the exported script,
+  // the note lets the grid overflow by 1 px, a rounding pixel: 291 px and
+  // its border fit, 292 px and its border do not.
+  type(cols, "1");
+  type(cellBox("width"), "291");
+  expect(sizeNotes()).toBe("The grid is 291 × 290 px.");
+  type(cellBox("width"), "292");
+  expect(sizeNotes()).toBe(`The grid is 292 × 290 px.${TOO_WIDE}`);
 
   type(cellBox("height"), "43");
   expect(sizeNotes()).toContain(TOO_SMALL);

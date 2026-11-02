@@ -9,8 +9,10 @@ import {
   backgroundImageMaxDim,
   gridPixelSize,
   gridSizeText,
+  isUnfinishedCellSize,
   parseCellSize,
   parseGridSize,
+  scrollsOnPhone,
 } from "../lib/gridSize";
 import { encodeNamesCsv, splitCsvPreservingBlanks, useEditor } from "../EditorContext";
 import { CategoryMeta, ExperimentalConfig, ScrollStart, SkipBehavior } from "../grid-types";
@@ -312,9 +314,15 @@ const QuestionGridForm: React.FC = () => {
   };
 
   // Likewise, only a whole number of pixels from 20 to 600 changes a cell.
+  // Digits below 20 are a size still being typed, so they show no note.
+  // Leaving the box without a usable size puts back the last good one.
   const handleCellWidth = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCellWidthInput(e.target.value);
     if (e.target.value === "") return;
+    if (isUnfinishedCellSize(e.target.value)) {
+      setCellWidthWarn(false);
+      return;
+    }
     const v = parseCellSize(e.target.value);
     setCellWidthWarn(v === null);
     if (v !== null) dispatch({ type: "updateTuning", patch: { cellWidth: v } });
@@ -323,6 +331,10 @@ const QuestionGridForm: React.FC = () => {
   const handleCellHeight = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCellHeightInput(e.target.value);
     if (e.target.value === "") return;
+    if (isUnfinishedCellSize(e.target.value)) {
+      setCellHeightWarn(false);
+      return;
+    }
     const v = parseCellSize(e.target.value);
     setCellHeightWarn(v === null);
     if (v !== null) dispatch({ type: "updateTuning", patch: { cellHeight: v } });
@@ -420,7 +432,7 @@ const QuestionGridForm: React.FC = () => {
                 value={cellWidthInput}
                 onChange={handleCellWidth}
                 onBlur={() => {
-                  if (cellWidthWarn || !cellWidthInput) {
+                  if (parseCellSize(cellWidthInput) === null) {
                     setCellWidthInput(String(Math.round(tuning.cellWidth)));
                     setCellWidthWarn(false);
                   }
@@ -443,7 +455,7 @@ const QuestionGridForm: React.FC = () => {
                 value={cellHeightInput}
                 onChange={handleCellHeight}
                 onBlur={() => {
-                  if (cellHeightWarn || !cellHeightInput) {
+                  if (parseCellSize(cellHeightInput) === null) {
                     setCellHeightInput(String(Math.round(tuning.cellHeight)));
                     setCellHeightWarn(false);
                   }
@@ -455,8 +467,10 @@ const QuestionGridForm: React.FC = () => {
         </div>
         <div id={gridSizeNotesId} className="mt-1.5 flex flex-col gap-0.5 text-xs">
           <p className="text-ink-muted">The grid is {gridSizeText(gridSize)}.</p>
-          {gridSize.width > PHONE_WIDTH && (
-            <p className="text-amber-700">Wider than a phone screen: respondents on phones scroll sideways.</p>
+          {scrollsOnPhone(gridSize) && (
+            <p className="text-amber-700">
+              Wider than Qualtrics' phone view ({PHONE_WIDTH} px): respondents on phones scroll sideways.
+            </p>
           )}
           {Math.min(tuning.cellWidth, tuning.cellHeight) < MIN_TAP_SIZE && (
             <p className="text-amber-700">Cells smaller than {MIN_TAP_SIZE} px are hard to tap on a phone.</p>

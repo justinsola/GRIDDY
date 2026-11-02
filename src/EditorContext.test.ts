@@ -626,12 +626,12 @@ describe("the grid's size comes from its cells", () => {
     };
   }
 
-  it("gives a new survey cells of 100 × 100 px, so its 3 × 3 grid is 320 × 320 px", () => {
+  it("gives a new survey cells of 90 × 90 px, so its 3 × 3 grid is 290 × 290 px", () => {
     const { config } = editorReducer(makeState(), { type: "newSurvey" });
     expect(config.tuning).toEqual(defaultTuning());
-    expect(config.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, sizing: "cells" });
+    expect(config.tuning).toMatchObject({ cellWidth: 90, cellHeight: 90, sizing: "cells" });
     expect("previewWidth" in config.tuning).toBe(false);
-    expect(gridPixelSize(config)).toEqual({ width: 320, height: 320 });
+    expect(gridPixelSize(config)).toEqual({ width: 290, height: 290 });
   });
 
   it("keeps the exact pixel size of a survey saved with a fixed frame", () => {
@@ -666,13 +666,13 @@ describe("the grid's size comes from its cells", () => {
   it("uses a new survey's sizes for numbers that are missing or unusable", () => {
     for (const frame of [undefined, Number.NaN, 0, -550, "550"]) {
       const out = normalizeConfig(savedBefore(3, 3, { previewWidth: frame as number, previewHeight: frame as number }));
-      expect(out.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, sizing: "cells" });
+      expect(out.tuning).toMatchObject({ cellWidth: 90, cellHeight: 90, sizing: "cells" });
     }
     const repaired = normalizeConfig({
       ...makeBaseConfig(),
       tuning: { ...defaultTuning(), cellWidth: Number.NaN, gridGap: -1 },
     });
-    expect(repaired.tuning).toMatchObject({ cellWidth: 100, cellHeight: 100, gridGap: 10 });
+    expect(repaired.tuning).toMatchObject({ cellWidth: 90, cellHeight: 90, gridGap: 10 });
     const noTuning = { ...makeBaseConfig(), tuning: undefined as unknown as TuningConfig };
     expect(normalizeConfig(noTuning).tuning).toEqual(defaultTuning());
   });
@@ -687,9 +687,9 @@ describe("the grid's size comes from its cells", () => {
   it("grows the grid by one cell and one gap for each column added", () => {
     let state = editorReducer(makeState(), { type: "newSurvey" });
     state = editorReducer(state, { type: "updateLayout", patch: { cols: 4 } });
-    expect(gridPixelSize(state.config)).toEqual({ width: 430, height: 320 });
+    expect(gridPixelSize(state.config)).toEqual({ width: 390, height: 290 });
     state = editorReducer(state, { type: "updateTuning", patch: { cellWidth: 60 } });
-    expect(gridPixelSize(state.config)).toEqual({ width: 270, height: 320 });
+    expect(gridPixelSize(state.config)).toEqual({ width: 270, height: 290 });
 
     // A migrated survey's cells keep their size as the grid grows.
     const old = editorReducer(makeState(normalizeConfig(savedBefore(3, 3))), {

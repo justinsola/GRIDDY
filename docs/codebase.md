@@ -82,15 +82,22 @@ Things worth knowing:
 - **Cells are keyed `"r{row}-c{col}"`**, 1-based (e.g. `"r2-c3"`). This key shows
   up in blocked cells, fixed pre-fill assignments and the exported answers.
 - **The grid's size comes from its cells.** Each cell is `tuning.cellWidth` ×
-  `tuning.cellHeight` px (100 × 100 for a new survey), so the grid is its
+  `tuning.cellHeight` px (90 × 90 for a new survey), so the grid is its
   columns of cells plus the gaps between them and the padding around them,
-  and grows with every row and column: a 3 × 3 grid of 100 px cells, 10 px
-  apart, is 320 × 320 px. [`gridPixelSize`](../src/lib/gridSize.ts) works it
+  and grows with every row and column: a 3 × 3 grid of 90 px cells, 10 px
+  apart, is 290 × 290 px. [`gridPixelSize`](../src/lib/gridSize.ts) works it
   out for every view: the exported script, both previews, the editor's
-  readout and the background image's resolution. A design has that size on
-  every device; a grid wider than the screen scrolls sideways in its own
-  frame and starts at its middle, or at its left edge when
-  `layout.scrollStart` is `"left"`.
+  readout and the background image's resolution. The grid's 1 px border is
+  drawn outside that size, so on the page the grid takes `GRID_BORDERS`
+  (2 px) more: a new survey's grid is 292 px wide there, exactly the width
+  Qualtrics' phone view leaves for it (`PHONE_WIDTH`; measured on
+  2 November 2026, 292 px in the new survey-taking experience and 309 px in
+  the older layouts). A design has that size on every device; a grid wider
+  than the screen scrolls sideways in its own frame and starts at its
+  middle, or at its left edge when `layout.scrollStart` is `"left"`. Until
+  the respondent first uses the grid, the script puts it back there whenever
+  the layout changes (Qualtrics can settle the page a little narrower after
+  the grid appears); after that it never moves it.
 - **Surveys saved before 2 November 2026** have no `tuning.sizing`: every
   grid filled a fixed frame of `previewWidth` × `previewHeight` px (550 ×
   550) and its cells shared it out. `normalizeConfig`, through
@@ -151,12 +158,12 @@ and `layout.scrollStart` are examples.
 
 | File | Role |
 | --- | --- |
-| [`ConfigPanel.tsx`](../src/components/ConfigPanel.tsx) | The left-hand editor (numbered sections: question & grid, categories, how respondents answer, experiment setup). A hint under the question box says that leaving it empty uses the wording written in Qualtrics. Section 01 has Cell size (Width and Height, whole pixels from 20 to 600, checked like Rows and Columns), a line giving the grid's size with notes when it is wider than a phone (340 px) or a cell is under 44 px, and "On a narrow screen, start at: The center / The left edge". A migrated survey's fractional cell size shows rounded and stays as it is until edited. |
+| [`ConfigPanel.tsx`](../src/components/ConfigPanel.tsx) | The left-hand editor (numbered sections: question & grid, categories, how respondents answer, experiment setup). A hint under the question box says that leaving it empty uses the wording written in Qualtrics. Section 01 has Cell size (Width and Height, whole pixels from 20 to 600, checked like Rows and Columns, except that digits below 20 count as a size still being typed and show no note), a line giving the grid's size with notes when the grid and its border are wider than Qualtrics' phone view (292 px) or a cell is under 44 px, and "On a narrow screen, start at: The center / The left edge". A migrated survey's fractional cell size shows rounded and stays as it is until edited. |
 | [`CategoryChips.tsx`](../src/components/CategoryChips.tsx) | Chip editor for categories / barriers / labels, with color presets and image upload. Layer mode is offered for categories only. |
 | [`RespondentTextsEditor.tsx`](../src/components/RespondentTextsEditor.tsx) | "Words shown to respondents" in section 03: the grid's own wording for GRIDDY's texts. Lists only the texts the grid can show: those its answer mode, experiment and empty-cell setting use, and, for a grid respondents only look at (no labels to place, or interaction off), just the scroll hint and the arrows, plus the dropdown texts if the grid draws dropdowns, with the English as placeholder, a Reset, and a warning when a placeholder such as `{n}` is missing or unknown. |
 | [`ImageInput.tsx`](../src/components/ImageInput.tsx) | URL-or-upload image field. |
-| [`PreviewPanel.tsx`](../src/components/PreviewPanel.tsx) | Live, interactive grid preview (design view) and the **Export to Qualtrics** modal. The design grid is drawn at the size `gridPixelSize` gives (100%), or scaled to the panel with the same shape (Fit), and a line above it says what a click does. In an experiment with fixed or shuffled pre-fills, "Clear pre-fills" asks first. |
-| [`RespondentPreview.tsx`](../src/components/RespondentPreview.tsx) | Runs the exported script in an isolated frame with a stand-in for Qualtrics. Desktop (the default) shows the page at full size, at least as wide as the grid, Phone in a 375 px wide frame where a wider grid starts at its middle (or left edge) with its scroll hint and edge arrows, and Fit zooms the whole frame out. The Qualtrics theme around the question can still differ. |
+| [`PreviewPanel.tsx`](../src/components/PreviewPanel.tsx) | Live, interactive grid preview (design view) and the **Export to Qualtrics** modal. The design grid is drawn at the size `gridPixelSize` gives (100%), or with Fit scaled down to a narrower panel with the same shape (never enlarged), and a line above it says what a click does. In an experiment with fixed or shuffled pre-fills, "Clear pre-fills" asks first. |
+| [`RespondentPreview.tsx`](../src/components/RespondentPreview.tsx) | Runs the exported script in an isolated frame with a stand-in for Qualtrics. Desktop (the default) shows the page at full size, at least as wide as the grid; Phone leaves the question the 292 px Qualtrics' phone view leaves for the grid (`PHONE_WIDTH`), where a wider grid starts at its middle (or left edge) with its scroll hint and edge arrows; Fit zooms the whole frame out. The page never shows a scrollbar of its own, which would narrow it. The Qualtrics theme around the question can still differ. |
 | [`PreviewViewChoice.tsx`](../src/components/PreviewViewChoice.tsx) | The View switch above each preview: 100% / Fit, or Desktop / Phone / Fit. |
 | [`SaveButton.tsx`](../src/components/SaveButton.tsx) | Saves to localStorage (needs a survey title). Opens `SaveChoiceDialog` when saving would replace a survey renamed or saved elsewhere since. |
 | [`SaveChoiceDialog.tsx`](../src/components/SaveChoiceDialog.tsx) | Asks "Replace, or save as a new survey?" for the Save button and the multi-question page. |
@@ -169,7 +176,7 @@ and `layout.scrollStart` are examples.
 | --- | --- |
 | [`surveysApi.ts`](../src/lib/surveysApi.ts) | Save/list/load/find/duplicate/delete surveys and JSON export/import. Storage key: `griddy.localSurveys.v1`. Import tells surveys apart by id: `surveyFingerprint` (a stable hash of name + config, ignoring `id`) only skips a survey already here unchanged, and of two different copies with one id the newer is kept. |
 | [`saveEditorSurvey.ts`](../src/lib/saveEditorSurvey.ts) | The save shared by the Save button and the multi-question page: checks for a `SaveConflict`, then replaces the stored survey or saves it as a new one. |
-| [`gridSize.ts`](../src/lib/gridSize.ts) | The grid's size. Checks the numbers typed for Rows and Columns (1 to 10) and Cell size (20 to 600 px) and repairs saved rows and columns; `gridPixelSize` gives the grid's size in pixels from its cells, rows, columns, gap and padding; `cellSizedTuning` gives surveys saved with a fixed frame their cell size; `defaultTuning` is a new survey's. |
+| [`gridSize.ts`](../src/lib/gridSize.ts) | The grid's size. Checks the numbers typed for Rows and Columns (1 to 10) and Cell size (20 to 600 px) and repairs saved rows and columns; `gridPixelSize` gives the grid's size in pixels from its cells, rows, columns, gap and padding; `cellSizedTuning` gives surveys saved with a fixed frame their cell size; `defaultTuning` is a new survey's; `PHONE_WIDTH` and `scrollsOnPhone` say whether the grid and its border fit Qualtrics' phone view; `backgroundImageMaxDim` sizes an uploaded background image (at most 4096 px). |
 | [`qualtricsExport.ts`](../src/lib/qualtricsExport.ts) | The biggest file. `buildQualtricsSnippet` writes a vanilla-JS renderer for one grid; `buildQualtricsQsf` / `buildQualtricsQsfForConfig` wrap one or many grids into an importable `.qsf` (questions + JS + embedded-data fields + survey flow). `recordedFieldName` gives the `__js_` name Qualtrics records a field under, which the `.qsf` declares. |
 | [`respondentTexts.ts`](../src/lib/respondentTexts.ts) | The 50 texts GRIDDY shows respondents: key, English, editor label, group, which setups use it, and the placeholders it fills and needs. `respondentTextsFor` merges a grid's own wording with the English for the script; `cleanRespondentTexts`, `missingPlaceholders` and `unknownPlaceholders` serve `normalizeConfig` and the editor. |
 | [`combineFields.ts`](../src/lib/combineFields.ts) | Finds two questions of a multi-question survey that would save to the same field, and names it as Qualtrics records it. |
@@ -235,9 +242,9 @@ Tests sit next to the code as `*.test.ts(x)`:
 - `lib/qualtricsExport.test.ts`: snippet and `.qsf` generation, the declared
   `__js_` names, escaping of respondent texts, the grid's size in the script.
 - `lib/respondentExperience.test.ts`: runs the exported script in a fake
-  Qualtrics page: the grid's size, scroll cues and where a wide grid starts,
-  the empty-cell reminder, restoring answers, touch and keyboard input, and a
-  full non-English set of texts. The fake page is the new survey-taking
+  Qualtrics page: the grid's size, scroll cues, where a wide grid starts and
+  what stops it being centred again, the empty-cell reminder, restoring
+  answers, touch and keyboard input, and a full non-English set of texts. The fake page is the new survey-taking
   experience by default; pass `{ engine: "older" | "plain" | "failing" }` for
   the other kinds of page. jsdom does no layout, so tests that need sizes or
   scrolling set `scrollWidth`, `clientWidth` or `getBoundingClientRect`
@@ -245,12 +252,15 @@ Tests sit next to the code as `*.test.ts(x)`:
 - `lib/respondentTexts.test.ts`, `components/RespondentTextsEditor.test.tsx`:
   the respondent texts and their editor.
 - `lib/gridSize.test.ts`: the grid's size in pixels, the size boxes' checks,
-  and the cell sizes surveys saved with a fixed frame get.
+  the phone view check, the background image's size, and the cell sizes
+  surveys saved with a fixed frame get.
 - `lib/combineFields.test.ts`, `lib/imageInput.test.ts`: small helpers.
 - `components/PreviewPanel.test.tsx`, `components/ConfigPanel.test.tsx`,
   `components/CategoryChips.test.tsx`: editor and preview behaviour, including
   the preview views, the cell size boxes and their notes, and the export
-  dialog's field names.
+  dialog's field names. jsdom does not load an iframe's `srcdoc`, so the
+  test of the Phone view's start writes the respondent preview's page into
+  its frame and lays the grid out by the frame's width itself.
 
 ## History notes
 

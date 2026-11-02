@@ -272,8 +272,9 @@ function createDefaultConfig(): GridConfig {
     blockedCells: {},
   };
 
-  // Cells of 100 × 100 px: the 3 × 3 grid is 320 × 320 px, which fits a
-  // phone. The grid grows with every row and column.
+  // Cells of 90 × 90 px: the 3 × 3 grid is 290 × 290 px, which with its
+  // 1 px border is exactly as wide as Qualtrics' phone view leaves for it
+  // (292 px). The grid grows with every row and column.
   const tuning: TuningConfig = defaultTuning();
 
   const defaultCsv = "Family, Friends, Coworkers, Neighbors";

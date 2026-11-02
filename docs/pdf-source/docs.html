@@ -102,7 +102,7 @@
   <h1><span class="num">2.</span>Using GRIDDY</h1>
 
   <h2>The editor</h2>
-  <p>Settings on the left, live preview on the right. In section 01, <strong>Cell size</strong> sets each cell's width and height in pixels (100 × 100 for a new survey); the grid grows with its rows and columns, and a line under the boxes gives its size. A design has that size on every screen. A grid wider than the screen, as on a phone, scrolls sideways and starts at its middle, or at its left edge if you choose that under <strong>On a narrow screen, start at</strong>. Pick a category in the Placing row, then click cells to try the grid. These test fills are not saved: respondents start with an empty grid. A line at the top of the design preview says what a click does; in an experiment with fixed or shuffled pre-fills, clicks change the pre-fills every respondent sees. Both previews show the grid at full size, with Fit as an option. Name the survey at the top and click Save. If the survey was renamed, or changed since it was opened or last saved (in another tab or window, or by importing a backup), Save asks whether to replace the saved copy or save it as a new survey.</p>
+  <p>Settings on the left, live preview on the right. In section 01, <strong>Cell size</strong> sets each cell's width and height in pixels (90 × 90 for a new survey, so a 3 × 3 grid just fits the 292 px Qualtrics' phone view leaves for it); the grid grows with its rows and columns, and a line under the boxes gives its size. A design has that size on every screen. A grid wider than the screen, as on a phone, scrolls sideways and starts at its middle, or at its left edge if you choose that under <strong>On a narrow screen, start at</strong>. Pick a category in the Placing row, then click cells to try the grid. These test fills are not saved: respondents start with an empty grid. A line at the top of the design preview says what a click does; in an experiment with fixed or shuffled pre-fills, clicks change the pre-fills every respondent sees. Both previews show the grid at full size, with Fit as an option. Name the survey at the top and click Save. If the survey was renamed, or changed since it was opened or last saved (in another tab or window, or by importing a backup), Save asks whether to replace the saved copy or save it as a new survey.</p>
   <figure><img src="img/editor.png" alt="The GRIDDY editor"><figcaption>The editor at <code>/</code>: question &amp; grid settings (01), categories (02), and the live preview at full size, with test fills.</figcaption></figure>
 
   <h2>How respondents answer, and experiments</h2>
@@ -110,7 +110,7 @@
   <figure class="medium"><img src="img/respondent-options.png" alt="Sections 03 and 04 of the editor"></figure>
 
   <h2>Respondent preview</h2>
-  <p>Runs the real exported script, with the grid at full size. <strong>View</strong> switches between Desktop (the default), Phone (a 375 px screen, with the scroll hint and edge arrows; a wider grid starts at its middle) and Fit (zoomed out). Answers here aren't saved, and your Qualtrics theme may change the page around the grid.</p>
+  <p>Runs the real exported script, with the grid at full size. <strong>View</strong> switches between Desktop (the default), Phone (the 292 px Qualtrics' phone view leaves for the grid, with the scroll hint and edge arrows; a wider grid starts at its middle) and Fit (zoomed out). Answers here aren't saved, and your Qualtrics theme may change the page around the grid.</p>
   <figure class="narrow"><img src="img/respondent-preview.png" alt="The Respondent preview tab"><figcaption>The Respondent preview tab in its Desktop view, at full size. Phone and Fit are the other views.</figcaption></figure>
 
   <h2>My Surveys</h2>
@@ -242,7 +242,7 @@ git push -u origin feature/my-change</code></pre>
   <ul>
     <li>The grid keeps its size on phones and scrolls sideways. Answers are recorded in Qualtrics' new survey-taking experience too, under <code>__js_</code> field names.</li>
     <li>Save asks before replacing a survey, My Surveys has Duplicate, previews show the grid at full size, and each grid can reword the texts respondents see.</li>
-    <li>Each cell has a size in pixels, 100 × 100 by default, and the grid grows with its rows and columns instead of every grid filling 550 × 550 px. Surveys saved earlier keep their size. A grid wider than the screen starts at its middle.</li>
+    <li>Each cell has a size in pixels, 90 × 90 by default, and the grid grows with its rows and columns instead of every grid filling 550 × 550 px. Surveys saved earlier keep their size. A grid wider than the screen starts at its middle.</li>
   </ul>
 </section>
 

@@ -25,15 +25,24 @@ export function repairGridSize(value: unknown, fallback: number): number {
 }
 
 /** A cell's width and height each take a whole number of pixels from 20 to
- * 600; a new survey's cells are 100 × 100 px. */
+ * 600; a new survey's cells are 90 × 90 px, so its 3 × 3 grid, 290 px wide
+ * and 292 px with its border, fits Qualtrics' phone view exactly. */
 export const MIN_CELL_SIZE = 20;
 export const MAX_CELL_SIZE = 600;
-export const DEFAULT_CELL_SIZE = 100;
+export const DEFAULT_CELL_SIZE = 90;
 export const CELL_SIZE_MESSAGE = "Use a whole number from 20 to 600";
 
-/** About the width, in pixels, that Qualtrics gives a question on a phone
- * (339 px in its phone preview). A wider grid scrolls sideways there. */
-export const PHONE_WIDTH = 340;
+/** The grid's 1 px border, on both sides. The exported grid draws it outside
+ * its designed size, so whatever asks whether the grid fits a space measures
+ * the grid's width plus this. */
+export const GRID_BORDERS = 2;
+
+/** The width, in pixels, Qualtrics' phone view leaves for a question's grid,
+ * measured on 2 November 2026: its phone preview is 339 px wide, and leaves
+ * 292 px in the new survey-taking experience (the default for new surveys)
+ * and 309 px in the older layouts. The editor's note and the Respondent
+ * preview's Phone view use the narrower one. */
+export const PHONE_WIDTH = 292;
 /** Cells narrower or shorter than this, in pixels, are hard to tap. */
 export const MIN_TAP_SIZE = 44;
 
@@ -41,6 +50,10 @@ const DEFAULT_GRID_GAP = 10;
 const DEFAULT_GRID_PADDING = 0;
 /** The background image resolution every grid had before cell sizes. */
 const MIN_BACKGROUND_IMAGE_DIM = 1100;
+/** The most pixels an uploaded background image keeps on its longest side.
+ * Twice the largest grid (6090 px) would be over 12,000 px: more than some
+ * browsers can draw on a canvas, and too large to keep inside a survey. */
+export const MAX_BACKGROUND_IMAGE_DIM = 4096;
 
 /** The cell width or height typed in the editor, or null when it is not a
  * whole number from 20 to 600. */
@@ -51,7 +64,15 @@ export function parseCellSize(raw: string): number | null {
   return n >= MIN_CELL_SIZE && n <= MAX_CELL_SIZE ? n : null;
 }
 
-/** The tuning of a new survey: 100 × 100 px cells, 10 px apart. */
+/** Digits for a number below 20: too small for a cell, but how a size still
+ * being typed starts (150 is 1, then 15, then 150), so the editor shows no
+ * note for them. */
+export function isUnfinishedCellSize(raw: string): boolean {
+  const text = raw.trim();
+  return /^[0-9]+$/.test(text) && Number(text) < MIN_CELL_SIZE;
+}
+
+/** The tuning of a new survey: 90 × 90 px cells, 10 px apart. */
 export function defaultTuning(): TuningConfig {
   return {
     gridGap: DEFAULT_GRID_GAP,
@@ -152,15 +173,26 @@ export function gridPixelSize(config: {
   };
 }
 
-/** "320 × 320 px": the grid's size as the editor says it, in whole pixels. */
+/** "290 × 290 px": the grid's size as the editor says it, in whole pixels. */
 export function gridSizeText(size: GridPixelSize): string {
   return `${Math.round(size.width)} × ${Math.round(size.height)} px`;
 }
 
+/** Whether respondents on phones scroll the grid sideways: the grid and its
+ * border are wider than Qualtrics' phone view. The exported script decides
+ * it the same way, so one pixel too many (a rounding pixel) does not count:
+ * a grid 291 px wide still fits, 292 px does not. */
+export function scrollsOnPhone(size: GridPixelSize): boolean {
+  return size.width + GRID_BORDERS - PHONE_WIDTH > 1;
+}
+
 /** The longest side, in pixels, an uploaded background image is reduced to:
- * twice the grid's size, so it stays sharp on high-density screens, and never
+ * twice the grid's size, so it stays sharp on high-density screens, never
  * less than the 1100 px every grid's background got before cell sizes, so a
- * grid made larger later still has a sharp one. */
+ * grid made larger later still has a sharp one, and never more than 4096 px
+ * (MAX_BACKGROUND_IMAGE_DIM), so even the largest grid's image can be drawn
+ * and saved. */
 export function backgroundImageMaxDim(size: GridPixelSize): number {
-  return Math.max(MIN_BACKGROUND_IMAGE_DIM, Math.ceil(2 * Math.max(size.width, size.height)));
+  const twice = Math.ceil(2 * Math.max(size.width, size.height));
+  return Math.min(MAX_BACKGROUND_IMAGE_DIM, Math.max(MIN_BACKGROUND_IMAGE_DIM, twice));
 }

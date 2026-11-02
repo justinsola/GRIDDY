@@ -32,7 +32,7 @@ caught.
 | Survey name | `E2E test <date>` (for example `E2E test 2026-11-01`) |
 | Question text | `Who lives where? Fill in the grid:` (default) |
 | Rows × columns | 3 × 4 (non-square, so a rows/columns swap is visible) |
-| Cell size | 100 × 100 px (default), so the grid is 430 × 320 px, wider than a phone |
+| Cell size | 90 × 90 px (default), so the grid is 390 × 290 px, wider than Qualtrics' phone view |
 | On a narrow screen, start at | The center (default) |
 | Centre cell | on, label `Your House` |
 | Categories | `Family, Friends, Coworkers, Neighbors, Mom's friends` (the fifth one is added by hand; the apostrophe checks escaping) |
@@ -63,8 +63,9 @@ Variations to run when the relevant code changed are listed at the end.
 
 Afterwards: the file `E2E_test_<date>.qsf` is in Downloads, the preview
 shows a 3 × 4 grid with "Your House" in the middle of row 2 and five
-category buttons, the line under **Cell size** reads "The grid is 430 × 320
-px.", and nothing in the browser console mentions an error.
+category buttons, the line under **Cell size** reads "The grid is 390 × 290
+px." with the note that it is wider than Qualtrics' phone view, and nothing
+in the browser console mentions an error.
 
 ## Part B: check the file before importing it
 
@@ -121,8 +122,8 @@ records its own response for Part E.
 
 1. Click **Preview** at the top right of the builder and preview the survey.
 2. Check the desktop view first. The grid must look like the respondent
-   preview in GRIDDY (**View: Desktop**): 3 × 4, 430 × 320 px with cells of
-   100 × 100 px, "Your House" in the centre cell, five category buttons, the
+   preview in GRIDDY (**View: Desktop**): 3 × 4, 390 × 290 px with cells of
+   90 × 90 px, "Your House" in the centre cell, five category buttons, the
    design's fonts and colours.
 3. Pick **Family** and click two cells; pick **Mom's friends** and click one
    cell; click one of the painted cells again to clear it. Each click must
@@ -133,13 +134,21 @@ records its own response for Part E.
    older GRIDDY, which records nothing in the new survey-taking experience.
 5. Switch the preview to the mobile view. The grid must keep its designed
    size: cells, text and pictures the same as on desktop, never shrunk to
-   fit. The 430 px grid is wider than the phone's question (about 339 px),
-   so it must start scrolled to its middle: "Your House" in view, part of
-   columns 1 and 4 at the edges, the hint ("Part of this grid is out of
-   view. Scroll sideways to see all of it.") above it and an arrow at each
-   edge. Each arrow scrolls the grid its way; at either end only the other
-   arrow is left. GRIDDY's Respondent preview with **View: Phone** (a frame
-   375 px wide) must show the same start, hint and arrows; compare the two.
+   fit. The 390 px grid is wider than the space the phone view leaves for it
+   (the phone preview is 339 px wide and leaves the grid 309 px in the older
+   layouts, 292 px in the new survey-taking experience), so it must start
+   scrolled to its middle: "Your House" in view, part of columns 1 and 4 at
+   the edges, the hint ("Part of this grid is out of view. Scroll sideways
+   to see all of it.") above it and an arrow at each edge. Wait a moment
+   before you touch the grid and check that it is still in the middle: in
+   the console, the `scrollLeft` of the `[data-griddy-scroller]` element
+   (inside the preview's frame) must be (`scrollWidth` − `clientWidth`) / 2,
+   give or take 1. Each arrow scrolls the grid its way; at either end only
+   the other arrow is left. GRIDDY's Respondent preview with **View: Phone**
+   (which leaves the grid 292 px, as the new experience does) must show the
+   same start, hint and arrows; compare the two. Choose Phone before you use
+   the grid in another view, or press **Restart respondent preview** first:
+   once the grid has been used, it stays where it is.
 6. Press the grid's own **Next** button (the red one under the grid) with
    cells still empty. With the default setting (Remind), a reminder says how
    many cells are empty and how many of them are off-screen, the empty cells
@@ -171,8 +180,8 @@ records its own response for Part E.
     previews must grow to that size. Put the new script into Qualtrics as in
     step 9 and preview again: the desktop view's grid must be as large as
     GRIDDY's at **View: Desktop**, with cells 150 px wide and 120 px high
-    (measure one with the browser's inspector). Set the cells back to 100 ×
-    100 afterwards.
+    (measure one with the browser's inspector). Set the cells back to 90 ×
+    90 afterwards.
 11. **Start at the left edge.** In GRIDDY, choose **On a narrow screen,
     start at → The left edge**. Respondent preview with **View: Phone** must
     start at column 1, with only the right arrow. Put the new script into
@@ -430,13 +439,17 @@ Fixed on 2 November, with the decisions above:
 
 Changed on 2 November, after those (branch `feat/cell-size`):
 
-- **Grid size:** each cell has a size in pixels (100 × 100 by default) and
-  the grid grows with its rows and columns, instead of every grid filling
-  550 × 550 px. A design has the same size on every device; surveys saved
-  earlier keep their exact size (Part D step 10, and the variation "A
-  survey saved before cell sizes").
+- **Grid size:** each cell has a size in pixels (90 × 90 by default, so a
+  3 × 3 grid and its border just fill the 292 px Qualtrics' phone view
+  leaves for it) and the grid grows with its rows and columns, instead of
+  every grid filling 550 × 550 px. A design has the same size on every
+  device, and its border is drawn outside that size in every Qualtrics
+  theme; surveys saved earlier keep their exact size (Part D step 10, and
+  the variation "A survey saved before cell sizes").
 - **Where a wide grid starts:** in its middle, with both arrows, unless the
-  researcher chooses the left edge (Part D steps 5 and 11).
+  researcher chooses the left edge. Until the respondent first uses the
+  grid it is centred again whenever the page changes, so it stays in the
+  middle when the page settles narrower (Part D steps 5 and 11).
 
 ## Findings log
 
@@ -457,3 +470,4 @@ Changed on 2 November, after those (branch `feat/cell-size`):
 | 2026-11-02 | Fix branch in both experiences: three grids on three pages, Back on | Pass | `E2E fix new exp 2026-11-02` (SV_0lcDvB3bTweMQ50). Grid A plain; grid B with only spaces in GRIDDY's question text and "Qualtrics wording for grid B" typed in the builder; grid C 10 × 10 with long labels (a 3,621-character answer). Run in the older layout (jfe5) and again after switching to the new experience (jfe7). Both runs: the reminder and Continue anyway worked, Back restored grid A as it was left (read with `getJSEmbeddedData`), grid B showed the Qualtrics wording, and `__js_GridAssignments_A`, `_B` and `_C` recorded every answer, including all 100 cells of grid C. An empty block added by mistake in the builder was skipped. The Column chooser listed only the declared `__js_` fields (the plain names the script also writes in the older layout are not recorded). |
 | 2026-11-02 | Experiment in the new experience | Pass | `E2E fix new exp experiment 2026-11-02` (SV_bdQpj829TVAzp42), new experience (jfe1). The pre-fills were recorded when the grid appeared, and the reaction was recorded: `__js_GridPrefills` `{"r1-c1":"Family","r2-c3":"Friends"}`, `__js_GridResponses` `{"r1-c1":"Agree"}`. |
 | 2026-11-02 | Final branch: Spanish respondent texts in both experiences | Pass | `E2E final texts 2026-11-02` (SV_cNED6I9CL3NIIsu). One grid with field name ending `ES` and eleven texts reworded in Spanish under Words shown to respondents, one of them with quotes and a backslash (`Siguiente "→" \`) and one with a piped-text code (`Colocando ${e://Field/Probe}:`). Run in the older layout (jfe1 preview) and again in the new experience (jfe6 preview). Both runs: every text appeared as typed, the piped code stayed literal (Qualtrics did not fill it in), the reminder read "Quedan 5 celdas vacías. Están marcadas en naranja. Puede completarlas ahora o continuar de todos modos." with Mostrar and Continuar de todos modos, and Data & Analysis recorded both answers under `__js_GridAssignments_ES` (`{"r1-c1":"Familia"}` and `{"r1-c1":"Amigos","r1-c2":"Amigos"}`). |
+| 2026-11-02 | D, phone view of `feat/cell-size` in both experiences | 1 defect, fixed on the branch | Qualtrics' phone preview is 339 px wide; it leaves the grid 309 px in the older layouts and 292 px in the new survey-taking experience. In the new experience the centred start landed at `scrollLeft` 117 instead of 124: the page settled 14 px narrower after the grid had centred itself once. Fixed by centring the grid again whenever the layout changes until the respondent first uses it. Not yet rerun live. |

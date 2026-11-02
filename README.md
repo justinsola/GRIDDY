@@ -180,16 +180,21 @@ or translate it there.
 ### Grid size and phones
 
 Set each cell's width and height under **01 Question & grid → Cell size**:
-whole pixels from 20 to 600, 100 × 100 for a new survey. The grid's size
-follows from its rows and columns (a 3 × 3 grid of 100 px cells is 320 × 320
+whole pixels from 20 to 600, 90 × 90 for a new survey. The grid's size
+follows from its rows and columns (a 3 × 3 grid of 90 px cells is 290 × 290
 px), and the line under Cell size gives it. A design has that size on every
 device; GRIDDY never shrinks it to fit.
 
-Qualtrics gives a question about 340 px on a phone. A wider grid scrolls
-sideways inside its own frame there, with a hint and arrows at its edges,
-and starts scrolled to its middle. To start at column 1 instead, choose
-**The left edge** under **On a narrow screen, start at**. The editor notes a
-grid wider than a phone, and cells under 44 px, which are hard to tap.
+Qualtrics' phone view leaves the grid 292 px in the new survey-taking
+experience, the default for new surveys, and 309 px in the older layouts.
+A new survey's 3 × 3 grid, 292 px with its 1 px border, just fits. A wider
+grid scrolls sideways inside its own frame there, with a hint and arrows at
+its edges, and starts scrolled to its middle; it is centred again as the
+page settles, until the respondent first touches or scrolls it. To start at
+column 1 instead, choose **The left edge** under **On a narrow screen, start
+at**. The editor notes a grid wider than Qualtrics' phone view, and cells
+under 44 px, which are hard to tap. The Respondent preview's **Phone** view
+gives the grid the same 292 px.
 
 Surveys saved before November 2026 drew every grid at 550 × 550 px. They
 keep that size: their cells get the size they had, which Cell size shows
